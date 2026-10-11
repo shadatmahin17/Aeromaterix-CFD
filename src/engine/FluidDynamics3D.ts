@@ -321,37 +321,94 @@ export class FluidDynamics3D {
           }
         }
 
-        // --- E. FOREBODY CHINE VORTICES (F-22 & Concorde Ogival Delta) ---
-        if ((modelType === 'f22' || modelType === 'concorde') && aoaDeg > 3 && bx > noseX + 1.2 && bx < localTeX) {
-          const chineCoreZ = 1.2 + (bx - noseX) * 0.19;
+        // --- E. MODEL-SPECIFIC VORTEX & JET ENGINES ---
+
+        // 1. CONCORDE SST: Slender Ogival Gothic Delta Leading-Edge Vortex Roll-Up
+        if (modelType === 'concorde' && aoaDeg > 1.0 && bx > -8.2 && bx < localTeX + 2.0) {
+          const deltaProgress = Math.max(0, Math.min(1, (bx - (-8.2)) / (localTeX - (-8.2))));
+          const deltaCoreZ = (0.45 + Math.pow(deltaProgress, 1.25) * (halfSpan - 0.45));
+          const deltaCoreY = wingY_camber + 0.15 + deltaProgress * 0.35 * Math.sin(aoaRad);
+
           for (const sign of [-1, 1]) {
-            const rChine = Math.hypot(bz - sign * chineCoreZ, by - 0.35);
-            if (rChine < 1.8 && rChine > 0.05) {
-              const chineGamma = (aoaDeg / 18) * vInf * 1.1;
-              const chineVTan = (chineGamma / (2 * Math.PI * rChine)) * (1 - Math.exp(-(rChine * rChine) / 0.14));
-              v += sign * ((bz - sign * chineCoreZ) / rChine) * chineVTan * cosA;
-              w += -sign * ((by - 0.35) / rChine) * chineVTan;
-              u += chineVTan * 0.35; // Axial vortex core acceleration
+            const rDelta = Math.hypot(bz - sign * deltaCoreZ, by - deltaCoreY);
+            if (rDelta < 2.4 && rDelta > 0.04) {
+              const deltaGamma = (Math.max(2.0, aoaDeg) / 14.0) * vInf * 2.8;
+              const coreRadius = 0.22 + deltaProgress * 0.25;
+              const deltaVTan = (deltaGamma / (2 * Math.PI * rDelta)) * (1 - Math.exp(-(rDelta * rDelta) / (coreRadius * coreRadius)));
+
+              // Intense leading-edge vortex swirl: rolls upward and over the delta upper surface
+              v += sign * ((bz - sign * deltaCoreZ) / rDelta) * deltaVTan * cosA;
+              w += -sign * ((by - deltaCoreY) / rDelta) * deltaVTan;
+              u += deltaVTan * 0.55; // Axial core super-velocity (vortex core suction peak)
             }
           }
         }
 
-        // --- F. ENGINE INTAKE SUCTION & EXHAUST JET ---
-        if (modelType === 'airliner') {
-          // Underslung turbofan nacelles at z = ±3.5, y = -1.5, x = -0.5
-          for (const nz of [-3.5, 3.5]) {
-            const distNacelle = Math.hypot(bz - nz, by + 1.5, bx + 0.5);
-            if (distNacelle < 1.8 && distNacelle > 0.05) {
-              u += 0.38 * vInf * Math.exp(-distNacelle / 1.0);
+        // 2. F-22 RAPTOR: Forebody Chine Vortices & Canted Twin Fin Channeling
+        if (modelType === 'f22') {
+          // Forebody chine vortices shed from sharp chines at AoA > 2.5 deg
+          if (aoaDeg > 2.5 && bx > noseX + 1.2 && bx < localTeX) {
+            const chineCoreZ = 1.15 + (bx - noseX) * 0.18;
+            const chineCoreY = by - 0.28;
+            for (const sign of [-1, 1]) {
+              const rChine = Math.hypot(bz - sign * chineCoreZ, chineCoreY);
+              if (rChine < 1.9 && rChine > 0.05) {
+                const chineGamma = (aoaDeg / 16) * vInf * 1.35;
+                const chineVTan = (chineGamma / (2 * Math.PI * rChine)) * (1 - Math.exp(-(rChine * rChine) / 0.14));
+                v += sign * ((bz - sign * chineCoreZ) / rChine) * chineVTan * cosA;
+                w += -sign * (chineCoreY / rChine) * chineVTan;
+                u += chineVTan * 0.42;
+              }
             }
           }
-        } else if (modelType === 'f22' && airspeed_kts >= 450) {
-          // Supersonic afterburner exhaust jet behind twin nozzles (bx > 5.5, bz = ±0.67)
-          if (bx > 5.5) {
+
+          // Canted vertical stabilizer wash (twin canted rudders at 28 deg)
+          if (bx > 1.8 && bx < 5.8 && by > 0.2 && by < 3.2) {
+            for (const sign of [-1, 1]) {
+              const finZ = sign * (1.25 + (by - 0.2) * 0.53);
+              const distFin = Math.abs(bz - finZ);
+              if (distFin < 0.65) {
+                // Flow deflection along fin cant angle
+                w += sign * 0.25 * vInf * Math.exp(-distFin / 0.35);
+              }
+            }
+          }
+
+          // Twin afterburner exhaust plumes behind Pratt & Whitney F119 nozzles
+          if (bx > 5.2) {
+            const isReheat = airspeed_kts >= 450;
+            const jetPower = isReheat ? (airspeed_kts / 380) * 1.2 : 0.45;
             for (const nz of [-0.67, 0.67]) {
               const rJet = Math.hypot(bz - nz, by + 0.38);
-              if (rJet < 1.3) {
-                u += (airspeed_kts / 400) * 0.85 * vInf * Math.exp(-rJet / 0.6);
+              if (rJet < 1.4) {
+                u += jetPower * vInf * Math.exp(-rJet / 0.55);
+              }
+            }
+          }
+        }
+
+        // 3. BOEING 787 AIRLINER: High-Bypass GEnx Turbofans & Raked Tip Wash
+        if (modelType === 'airliner') {
+          // Dual underslung turbofan nacelles at z = ±3.6, y = -1.45
+          for (const nz of [-3.6, 3.6]) {
+            // A. Intake suction zone ahead of fan face (bx between -3.2 and -0.8)
+            if (bx >= -3.2 && bx < -0.8) {
+              const distInlet = Math.hypot(bz - nz, by + 1.45, bx + 1.2);
+              if (distInlet < 1.8) {
+                // Suction draws fluid into the nacelle throat
+                u += 0.45 * vInf * Math.exp(-distInlet / 1.1);
+                w -= ((bz - nz) / (distInlet || 1)) * 0.2 * vInf;
+                v -= ((by + 1.45) / (distInlet || 1)) * 0.2 * vInf;
+              }
+            }
+            // B. High-velocity bypass fan and core exhaust jet (bx > -0.6)
+            if (bx >= -0.6) {
+              const rExhaust = Math.hypot(bz - nz, by + 1.45);
+              const jetLength = bx - (-0.6);
+              const jetWidth = 0.85 + jetLength * 0.045; // Core plume spreading
+              if (rExhaust < jetWidth * 1.8) {
+                const jetSpeed = 0.85 * vInf * Math.exp(-rExhaust / jetWidth) * Math.exp(-jetLength / 18.0);
+                u += jetSpeed;
               }
             }
           }

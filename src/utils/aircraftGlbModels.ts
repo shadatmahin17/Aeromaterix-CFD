@@ -21,8 +21,8 @@ export const GLB_MODEL_REGISTRY: Record<string, GlbModelMetadata> = {
     name: 'Boeing 787 Dreamliner',
     glbPath: '/models/boeing_787.glb',
     targetLength: 14.5,
-    // Model orientation: Align nose into wind (-X), tail downstream (+X)
-    rotationOffset: [0, -Math.PI / 2, 0],
+    // Boeing 787 CAD has length on X (nose at +X): rotate 180 deg to point nose directly into oncoming flow (-X)
+    rotationOffset: [0, Math.PI, 0],
     positionOffset: [0, 0, 0],
     scaleMultiplier: 1.0,
     fileSizeLabel: '11.0 MB CAD',
@@ -34,8 +34,8 @@ export const GLB_MODEL_REGISTRY: Record<string, GlbModelMetadata> = {
     name: 'Concorde SST (Supersonic)',
     glbPath: '/models/concorde_free_with_interior.glb',
     targetLength: 15.0,
-    // Concorde length along X: rotate 180 deg to align needle nose facing -X into wind
-    rotationOffset: [0, Math.PI, 0],
+    // Concorde CAD has needle nose natively pointing upstream (-X) and tail downstream (+X)
+    rotationOffset: [0, 0, 0],
     positionOffset: [0, 0, 0],
     scaleMultiplier: 1.0,
     fileSizeLabel: '5.8 MB PBR',
@@ -47,8 +47,8 @@ export const GLB_MODEL_REGISTRY: Record<string, GlbModelMetadata> = {
     name: 'Airfoil Section 3D',
     glbPath: '/models/airfoil.glb',
     targetLength: 9.5,
-    // Airfoil has span along X, chord along Z (-89 to 11): rotate so leading edge faces -X
-    rotationOffset: [0, Math.PI / 2, 0],
+    // Airfoil CAD: maps thick leading edge to -X and sharp trailing edge to +X with span on Z
+    rotationOffset: [Math.PI / 2, 0, -Math.PI / 2],
     positionOffset: [0, 0, 0],
     scaleMultiplier: 1.0,
     fileSizeLabel: '11.4 KB Mesh',

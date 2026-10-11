@@ -53,6 +53,14 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
   const controlsRef = useRef<OrbitControls | null>(null);
   const animFrameIdRef = useRef<number | null>(null);
 
+  // Live state refs so the 60fps WebGL loop accesses current model and aerodynamic telemetry
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+  const telemetryRef = useRef(telemetry);
+  telemetryRef.current = telemetry;
+  const isPausedRef = useRef(isPaused);
+  isPausedRef.current = isPaused;
+
   // Model & Simulation Roots
   const aircraftGroupRef = useRef<THREE.Group | null>(null);
   const glbRootRef = useRef<THREE.Group | null>(null);
@@ -330,35 +338,42 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
       }
 
       // Update Flow Particles
-      if (particlePositionsRef.current && particlesPointsRef.current && params.show_particles) {
+      // Update Flow Particles using live aerodynamic state
+      const currentParams = paramsRef.current;
+      const currentTelemetry = telemetryRef.current;
+      const currentPaused = isPausedRef.current;
+
+      if (particlePositionsRef.current && particlesPointsRef.current && currentParams.show_particles) {
         const pos = particlePositionsRef.current;
         const colorAttr = particlesPointsRef.current.geometry.attributes.color as THREE.BufferAttribute;
         const fluid3DParams: Fluid3DParams = {
-          modelType: params.modelType,
-          aoaDeg: params.angle_of_attack,
-          airspeed_kts: params.airspeed_kts,
-          mach: telemetry.mach,
-          altitude_ft: params.altitude_ft,
-          flapsDeg: params.flaps_deg,
-          isStalled: telemetry.isStalled,
-          cl: telemetry.cl,
-          cd: telemetry.cd,
+          modelType: currentParams.modelType,
+          aoaDeg: currentParams.angle_of_attack,
+          airspeed_kts: currentParams.airspeed_kts,
+          mach: currentTelemetry.mach,
+          altitude_ft: currentParams.altitude_ft,
+          flapsDeg: currentParams.flaps_deg,
+          isStalled: currentTelemetry.isStalled,
+          cl: currentTelemetry.cl,
+          cd: currentTelemetry.cd,
           timeSec: now * 0.001,
         };
+
+        const activeSpan = currentParams.modelType === 'airliner' ? 9.2 : (currentParams.modelType === 'concorde' ? 4.8 : (currentParams.modelType === 'naca2412' || currentParams.modelType === 'naca0012' ? 7.0 : 6.8));
 
         for (let i = 0; i < particleCount; i++) {
           const px = pos[i * 3];
           const py = pos[i * 3 + 1];
           const pz = pos[i * 3 + 2];
 
-          if (!isPaused) {
+          if (!currentPaused) {
             const vel3D = FluidDynamics3D.getVelocity({ x: px, y: py, z: pz }, fluid3DParams);
             pos[i * 3] += vel3D.u * 0.38;
             pos[i * 3 + 1] += vel3D.v * 0.38;
             pos[i * 3 + 2] += vel3D.w * 0.38;
 
             if (colorAttr) {
-              if (vel3D.isSeparated || (telemetry.isStalled && px > -1.0)) {
+              if (vel3D.isSeparated || (currentTelemetry.isStalled && px > -1.0)) {
                 colorAttr.setXYZ(i, 0.94, 0.27, 0.27);
               } else if (vel3D.pressureCoeff < -0.7) {
                 colorAttr.setXYZ(i, 0.0, 0.94, 1.0);
@@ -372,15 +387,18 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
             pos[i * 3] = -21;
             const roll = Math.random();
             if (roll < 0.45) {
-              pos[i * 3 + 1] = -0.8 + Math.random() * 2.2;
-              pos[i * 3 + 2] = -7.5 + Math.random() * 15.0;
+              // Wing streamtubes scaled to active aircraft span
+              pos[i * 3 + 1] = -0.75 + Math.random() * 2.0;
+              pos[i * 3 + 2] = -activeSpan * 0.9 + Math.random() * (activeSpan * 1.8);
             } else if (roll < 0.75) {
+              // Wingtip vortex roll-up cores
               const tipSign = Math.random() > 0.5 ? 1 : -1;
-              pos[i * 3 + 1] = -0.3 + Math.random() * 1.0;
-              pos[i * 3 + 2] = tipSign * (6.8 + (Math.random() - 0.5) * 1.2);
+              pos[i * 3 + 1] = -0.25 + Math.random() * 0.8;
+              pos[i * 3 + 2] = tipSign * (activeSpan + (Math.random() - 0.5) * 0.9);
             } else if (roll < 0.90) {
-              pos[i * 3 + 1] = -0.6 + Math.random() * 2.0;
-              pos[i * 3 + 2] = -1.2 + Math.random() * 2.4;
+              // Fuselage & cockpit stream
+              pos[i * 3 + 1] = -0.5 + Math.random() * 1.8;
+              pos[i * 3 + 2] = -1.1 + Math.random() * 2.2;
             } else {
               pos[i * 3 + 1] = -3.5 + Math.random() * 7.0;
               pos[i * 3 + 2] = -8.5 + Math.random() * 17.0;
@@ -597,22 +615,92 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
     const linesGroup = streamlinesGroupRef.current;
     
     // Model-tailored span stations and wingtip vortex positioning
-    let halfSpan = 6.8;
-    if (params.modelType === 'airliner') halfSpan = 9.2;
-    else if (params.modelType === 'concorde') halfSpan = 4.8;
-    else if (params.modelType === 'naca2412' || params.modelType === 'naca0012') halfSpan = 7.0;
+    interface RakeFilament {
+      y: number;
+      z: number;
+      type: 'vortex' | 'engine' | 'wing' | 'fuselage';
+    }
 
-    // Span offsets: Wingtip vortices (±halfSpan), mid-wings, and fuselage streamlines
-    const spanOffsets = [
-      -halfSpan * 1.02, -halfSpan * 0.98, // Starboard wingtip vortex pair
-      -halfSpan * 0.65, -halfSpan * 0.35, // Starboard mid-wing & inboard
-      -1.2, -0.4, 0.0, 0.4, 1.2,          // Fuselage & canopy lines
-      halfSpan * 0.35, halfSpan * 0.65,   // Port inboard & mid-wing
-      halfSpan * 0.98, halfSpan * 1.02,   // Port wingtip vortex pair
-    ];
+    const filaments: RakeFilament[] = [];
 
-    // Rake heights: Under-wing compression, stagnation chord, upper suction crest, canopy
-    const rakeHeights = [-0.85, -0.15, 0.55, 1.35];
+    if (params.modelType === 'airliner') {
+      // 1. BOEING 787: High-aspect wing, underslung turbofans, raked wingtips
+      const b787Span = 9.2;
+      // High-bypass turbofan nacelles (intake & bypass jet)
+      for (const nz of [-3.6, 3.6]) {
+        filaments.push({ y: -1.45, z: nz, type: 'engine' });
+        filaments.push({ y: -1.15, z: nz, type: 'engine' });
+      }
+      // Fuselage & passenger deck streamlines
+      [-1.2, -0.5, 0.0, 0.5, 1.2].forEach((z) => {
+        [-0.4, 0.35, 1.2, 2.0].forEach((y) => filaments.push({ y, z, type: 'fuselage' }));
+      });
+      // Swept wing rake
+      [-7.5, -5.5, -3.8, -2.0, 2.0, 3.8, 5.5, 7.5].forEach((z) => {
+        [-0.75, -0.1, 0.55].forEach((y) => filaments.push({ y, z, type: 'wing' }));
+      });
+      // Raked wingtip vortices
+      [-b787Span * 1.01, -b787Span * 0.98, b787Span * 0.98, b787Span * 1.01].forEach((z) => {
+        [-0.15, 0.2].forEach((y) => filaments.push({ y, z, type: 'vortex' }));
+      });
+    } else if (params.modelType === 'f22') {
+      // 2. F-22 RAPTOR: Diamond delta wing, sharp forebody chines, twin afterburners, canted rudders
+      const f22Span = 6.8;
+      // Forebody chine vortices shed off sharp stealth chines
+      [-1.15, -0.85, 0.85, 1.15].forEach((z) => {
+        filaments.push({ y: 0.15, z, type: 'vortex' });
+        filaments.push({ y: 0.45, z, type: 'vortex' });
+      });
+      // Twin afterburner exhaust plumes
+      for (const az of [-0.67, 0.67]) {
+        filaments.push({ y: -0.38, z: az, type: 'engine' });
+      }
+      // Stealth cockpit & dorsal spine
+      [-0.4, 0.0, 0.4].forEach((z) => {
+        [0.2, 0.85, 1.6].forEach((y) => filaments.push({ y, z, type: 'fuselage' }));
+      });
+      // Diamond delta wing rake
+      [-5.2, -3.6, -2.2, 2.2, 3.6, 5.2].forEach((z) => {
+        [-0.5, 0.1, 0.55].forEach((y) => filaments.push({ y, z, type: 'wing' }));
+      });
+      // Twin canted vertical stabilizers wash
+      [-1.55, 1.55].forEach((z) => {
+        [1.2, 2.1].forEach((y) => filaments.push({ y, z, type: 'vortex' }));
+      });
+      // Wingtip vortices
+      [-f22Span * 1.01, -f22Span * 0.98, f22Span * 0.98, f22Span * 1.01].forEach((z) => {
+        [-0.15, 0.15].forEach((y) => filaments.push({ y, z, type: 'vortex' }));
+      });
+    } else if (params.modelType === 'concorde') {
+      // 3. CONCORDE SST: Slender Gothic ogival delta with primary leading-edge vortex lift
+      const concordeSpan = 4.8;
+      // Slender needle nose & passenger tube
+      [-0.7, 0.0, 0.7].forEach((z) => {
+        [-0.5, 0.2, 0.9, 1.5].forEach((y) => filaments.push({ y, z, type: 'fuselage' }));
+      });
+      // Gothic delta leading-edge vortex sheet (spirals along the sweeping leading edge)
+      [-4.4, -3.6, -2.6, -1.6, 1.6, 2.6, 3.6, 4.4].forEach((z) => {
+        [-0.35, 0.05, 0.45].forEach((y) => filaments.push({ y, z, type: 'vortex' }));
+      });
+      // Twin Olympus engine box intake streams
+      [-1.85, 1.85].forEach((z) => {
+        filaments.push({ y: -0.85, z, type: 'engine' });
+      });
+      // Wingtip vortices
+      [-concordeSpan * 1.01, concordeSpan * 1.01].forEach((z) => {
+        filaments.push({ y: 0.1, z, type: 'vortex' });
+      });
+    } else if (params.modelType === 'cylinder') {
+      // 4. CYLINDER: Symmetrical cross-flow with von Kármán vortex street shedding
+      [-2.4, -1.8, -1.2, -0.6, 0.0, 0.6, 1.2, 1.8, 2.4].forEach((y) => {
+        [-3.0, 0.0, 3.0].forEach((z) => filaments.push({ y, z, type: 'wing' }));
+      });
+    } else {
+      // 5. NACA AIRFOIL SECTION: Pure 2D planar aerodynamic streamtubes
+      [-0.9, -0.4, 0.0, 0.4, 0.9, 1.6].forEach((y) => {
+        [-5.0, -2.5, 0.0, 2.5, 5.0].forEach((z) => filaments.push({ y, z, type: 'wing' }));
+      });
+    }
 
     const fluid3DParams: Fluid3DParams = {
       modelType: params.modelType,
@@ -627,34 +715,37 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
       timeSec: Date.now() * 0.001,
     };
 
-    spanOffsets.forEach((z) => {
-      rakeHeights.forEach((y) => {
-        // Upstream wind tunnel inlet rake at x = -21
-        const startPt = { x: -21, y, z };
-        // High-precision RK2 integration (65 steps at ds = 0.65 for smooth contouring)
-        const pts3D = FluidDynamics3D.traceStreamline(startPt, fluid3DParams, 65, 0.65);
+    filaments.forEach((fil) => {
+      const { y, z, type } = fil;
+      const startPt = { x: -21, y, z };
+      const pts3D = FluidDynamics3D.traceStreamline(startPt, fluid3DParams, 68, 0.64);
 
-        if (pts3D.length > 5) {
-          const points = pts3D.map((p) => new THREE.Vector3(p.x, p.y, p.z));
-          const curve = new THREE.CatmullRomCurve3(points);
-          const isVortexFilament = Math.abs(Math.abs(z) - halfSpan) < 0.4;
-          const tubeRadius = isVortexFilament ? 0.055 : 0.042;
-          const tubeGeo = new THREE.TubeGeometry(curve, 52, tubeRadius, 6, false);
+      if (pts3D.length > 5) {
+        const points = pts3D.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+        const curve = new THREE.CatmullRomCurve3(points);
+        const tubeRadius = type === 'engine' ? 0.065 : (type === 'vortex' ? 0.052 : 0.038);
+        const tubeGeo = new THREE.TubeGeometry(curve, 52, tubeRadius, 6, false);
 
-          const isSeparatedFilament = pts3D.some((p) => p.isSeparated);
-          // Color coding: Cyan for suction/vortices, Emerald for laminar, Crimson for stall
-          const tubeColor = isSeparatedFilament || (telemetry.isStalled && y > 0.0)
-            ? 0xef4444
-            : (isVortexFilament ? 0x00f0ff : (y > 0.3 ? 0x38bdf8 : 0x10b981));
+        const isSeparatedFilament = pts3D.some((p) => p.isSeparated);
+        let tubeColor = 0x10b981; // Default laminar emerald
 
-          const tubeMat = new THREE.MeshBasicMaterial({
-            color: tubeColor,
-            transparent: true,
-            opacity: isVortexFilament ? 0.85 : 0.68,
-          });
-          linesGroup.add(new THREE.Mesh(tubeGeo, tubeMat));
+        if (isSeparatedFilament || (telemetry.isStalled && y > 0.0)) {
+          tubeColor = 0xef4444; // Stall red
+        } else if (type === 'engine') {
+          tubeColor = 0xf97316; // Engine thrust amber/orange
+        } else if (type === 'vortex') {
+          tubeColor = 0x00f0ff; // Energetic vortex cyan
+        } else if (y > 0.3) {
+          tubeColor = 0x38bdf8; // Upper suction sky blue
         }
-      });
+
+        const tubeMat = new THREE.MeshBasicMaterial({
+          color: tubeColor,
+          transparent: true,
+          opacity: type === 'vortex' || type === 'engine' ? 0.88 : 0.65,
+        });
+        linesGroup.add(new THREE.Mesh(tubeGeo, tubeMat));
+      }
     });
   }, [params.show_streamlines, params.modelType, params.angle_of_attack, params.airspeed_kts, telemetry.cl, telemetry.isStalled]);
 

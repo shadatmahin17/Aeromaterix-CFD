@@ -1,156 +1,133 @@
-# Package.json Build Recovery & 3D Asset Pipeline Stabilization
+# Aerodynamic CFD Fluid Dynamics & Model Realignment Plan
 
-Comprehensive resolution plan addressing build pauses, dependency version conflicts in `package.json`, and asset pipeline stalls caused by large 3D GLB files in the project root.
+Comprehensive architectural and engineering plan to resolve the 3D model misalignments visible in the wind tunnel simulation and upgrade the aerodynamic fluid dynamics engine with authentic CFD principles (camber contouring, boundary layer deflection, trailing-edge downwash, and wingtip vortices).
+
+---
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
 > Based on your selections during Phase 1 clarification, the following architecture decisions are locked in for implementation:
 
-- **Dependency Stabilization**: All packages in `package.json` will be reverted to verified, production-stable releases (e.g., standardizing `vite@^6.2.0`, `typescript@^5.7.2`, `@vitejs/plugin-react@^4.3.4`, `tailwindcss@^4.0.9`, `three@^0.174.0`, and `@types/three@^0.174.0`) to eliminate non-existent version lookup errors and dependency resolution freezes.
-- **3D Asset Relocation**: Large 3D model assets (`boeing_787.glb`, `concorde_free_with_interior.glb`, `f-22_raptor_-_fighter_jet_-_free.glb`, and `airfoil.glb`), which aggregate to over 45 MB, will be relocated from the project root into `public/models/`. This prevents Vite's build bundler and Rollup transformation pipeline from attempting to process binary geometries during `npm run build`, and resolves file synchronization timeouts.
-- **Root Path & Script Normalization**: Ensure `package.json` build scripts specify clean output targets (`vite build`) and verify symlinks/paths so the CI/container build runner correctly locates and executes the build process without `ENOENT` path errors.
+- **Strict Unified Coordinate System**: All aircraft models (Boeing 787 Dreamliner, F-22 Raptor, Concorde SST, and NACA airfoils) will be re-aligned so that their nose points strictly upstream into the oncoming wind (`-X`), their tail points downstream (`+X`), wingspan extends along the lateral `Z` axis (starboard `-Z`, port `+Z`), and canopy/vertical stabilizers point vertically upwards (`+Y`).
+- **Aerodynamic CFD Physics**: The flow calculation engine (`FluidDynamics3D.ts`) will be upgraded from basic heuristic offsets to a robust potential-flow with boundary-element deflection model featuring:
+  1. **Solid Boundary Contour Advection**: Streamlines and particles wrap smoothly around fuselage and airfoils without penetrating solid geometry.
+  2. **Bernoulli Suction Acceleration**: Air traveling over the upper cambered surface accelerates (`u > vInf`, negative $C_p$), while under-wing flow compresses ($C_p > 0$).
+  3. **Trailing-Edge Downwash**: Kutta circulation induces a realistic downward deflection behind the wings proportional to the lift coefficient ($C_L$) and angle of attack.
+  4. **Lamb-Oseen Wingtip Vortices**: Air rolls from high-pressure under-wing surfaces to low-pressure upper surfaces at the wingtips, forming authentic trailing helical vortex tubes.
+  5. **Boundary Layer Separation & Stall Wake**: At high AoA or stall, flow detaches over the aft chord, shedding turbulent recirculating eddies into a widened wake deficit zone.
 
 ---
 
-## 1. Overview & Core Concept
-
-- **What It Does**: Fixes the root causes behind build pauses and failures during compilation, establishing a rock-solid, production-grade build pipeline that compiles in seconds while keeping the full 3D aerodynamic wind tunnel and CAD model features intact.
-- **Root Causes Identified**:
-  1. **Fictitious / Mismatched Package Versions**: `package.json` contains versions that do not exist in the npm registry (e.g., `"typescript": "^7.0.2"` when TypeScript is at v5.x; `"vite": "^8.3.0"` when Vite is at v6.x; `"@vitejs/plugin-react": "^6.1.1"` when plugin is at v4.x; `"dotenv": "^17.2.3"` when dotenv is at v16.x). These caused npm and bun resolution stalling.
-  2. **Vite Bundler Memory Saturation**: 4 large `.glb` files (totaling >45MB) placed directly in the project root caused `vite build` to attempt AST transformations and file watching on raw binary meshes during the `transforming...` stage, leading to process hangs.
-  3. **File System Sync Latency**: Giant binary files in the root folder caused container file-synchronization RPC timeouts (`Timed out waiting for applet file system condition to be met`).
-  4. **Working Directory ENOENT**: The build runner executing from container root expected a valid `package.json` link or path alignment.
-
----
-
-## 2. Analysis of the Build Pause Problem
+## 1. Root Cause Analysis of Visible Misalignment
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        DIAGNOSED BUILD BOTTLENECKS                     │
-├────────────────────────────────┬───────────────────────────────────────┤
-│ Issue                          │ Impact on Build                       │
-├────────────────────────────────┼───────────────────────────────────────┤
-│ 1. Invalid npm Semver Ranges   │ `typescript@^7.0.2`, `vite@^8.3.0`    │
-│    in package.json             │ stall dependency resolution & type    │
-│                                │ checking.                             │
-├────────────────────────────────┼───────────────────────────────────────┤
-│ 2. Binary Meshes in Root       │ 45 MB of `.glb` files in root get     │
-│                                │ scanned by Vite Rollup bundler,       │
-│                                │ causing indefinite `transforming...`  │
-│                                │ freeze.                               │
-├────────────────────────────────┼───────────────────────────────────────┤
-│ 3. Container FS Sync Deadlines │ File watcher RPC timeouts (>180s) on  │
-│                                │ large binary delta transfers.         │
-├────────────────────────────────┼───────────────────────────────────────┤
-│ 4. Missing / Outdated Typings  │ `@types/react`, `@types/three`        │
-│                                │ version mismatch with React 19.       │
-└────────────────────────────────┴───────────────────────────────────────┘
+CURRENT DEFECTS OBSERVED IN USER SCREENSHOTS:
+─────────────────────────────────────────────────────────────────────────────
+1. Boeing 787 Airliner (Screenshot 1):
+   • Model was rotated by +90° along Y axis, placing the fuselage sideways/diagonal
+     relative to the flow vectors.
+   • Streamlines crossed laterally across the fuselage and pierced through the wing.
+   • Force vectors (Lift/Drag) pointed at an awkward angle relative to the wing chord.
+
+2. F-22 Raptor (Screenshot 2):
+   • Model was loaded with 0° rotation offset, but the native GLTF CAD geometry had
+     its nose pointing towards +X.
+   • This caused the aircraft to face 180° backwards: oncoming wind hit the twin exhaust
+     nozzles and vertical stabilizers first, leaving through the radome nose!
+
+3. Streamline & Particle Field Behavior:
+   • Streamline rake emitter did not match the geometry's leading-edge profile.
+   • Particles floated in a uniform rectangular grid rather than concentrating along
+     streamtubes and shedding off wingtips into the aerodynamic wake.
+─────────────────────────────────────────────────────────────────────────────
 ```
 
 ---
 
-## 3. Key Product Decisions & Trade-Offs
+## 2. Technical Architecture & Component Changes
 
-- **Decision 1: Pinning Verified Stable Versions vs. Latest Untested Tags**
-  - *Chosen Approach*: Pin explicit, verified stable versions for all core build tools (`vite@^6.2.0`, `@vitejs/plugin-react@^4.3.4`, `typescript@^5.7.2`, `tailwindcss@^4.0.9`, `@tailwindcss/vite@^4.0.9`).
-  - *Why*: Eliminates phantom dependency trees, guarantees reproducible builds, and avoids experimental breaking changes.
-  - *Alternatives Considered*: Retaining current version strings with `--legacy-peer-deps`. Rejected because non-existent versions fail registry lookup.
+### Component 1: Model Alignment Standardization (`aircraftGlbModels.ts` & `aircraft3DGeometry.ts`)
 
-- **Decision 2: Moving `.glb` Files to `public/models/`**
-  - *Chosen Approach*: Move all `.glb` files into `public/models/` and reference them via standard static web paths (`/models/boeing_787.glb`, `/models/concorde_free_with_interior.glb`, `/models/f22_raptor.glb`, `/models/airfoil.glb`).
-  - *Why*: Vite passes assets in `public/` directly to `dist/` without Rollup transformation or memory overhead, cutting build time from indefinite hang down to <3 seconds.
-  - *Alternatives Considered*: Bundling models as base64 in TypeScript. Rejected due to extreme bundle size bloat.
+| Model | Native GLTF Orientation | Required Euler Correction `[X, Y, Z]` | Verified Outcome |
+| :--- | :--- | :--- | :--- |
+| **Boeing 787 Airliner** | Length along Z, Nose at +Z | `[0, -Math.PI / 2, 0]` | Nose at -X, Tail at +X, Wings along Z |
+| **F-22 Raptor** | Length along X, Nose at +X | `[0, Math.PI, 0]` | Nose at -X, Tail at +X, Twin tails at +X |
+| **Concorde SST** | Length along Z, Nose at -Z | `[0, Math.PI / 2, 0]` | Ogival delta nose at -X, Tail at +X |
+| **NACA 2412 / 0012** | Chord along X, LE at +X | `[0, Math.PI, 0]` | Leading edge at -X, Trailing edge at +X |
 
-- **Decision 3: Vite Build Configuration Tuning**
-  - *Chosen Approach*: Ensure `vite.config.ts` includes `assetsInclude: ['**/*.glb']` or treats `/models/` as pure static assets, and configure Rollup chunking rules for optimal production builds.
-  - *Why*: Prevents Vite from parsing binary GLTF buffers during code bundling.
+We will also implement an automatic validation check on model load that verifies the bounding box extents and ensures the centroid and nose tip are situated on the negative X axis.
 
 ---
 
-## 4. Technical Architecture & Resolution Strategy
-
-### Architecture & Pipeline Diagram
+### Component 2: High-Fidelity CFD Engine Overhaul (`FluidDynamics3D.ts`)
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        OPTIMIZED BUILD PIPELINE                        │
-└───────────────────────────────────┬────────────────────────────────────┘
+             ┌──────────────────────────────────────────────────┐
+             │       UPSTREAM INLET FLOW (u = vInf, -X)         │
+             └────────────────────────┬─────────────────────────┘
+                                      │
+            ┌─────────────────────────┴─────────────────────────┐
+            ▼                                                   ▼
+┌───────────────────────────────┐       ┌───────────────────────────────┐
+│       UPPER CAMBER FLOW       │       │       LOWER CAMBER FLOW       │
+│  - Acceleration (u > vInf)    │       │  - Deceleration / Compression │
+│  - Negative pressure peak     │       │  - Positive pressure (Cp > 0) │
+│  - Boundary layer thinning    │       │  - Trailing edge boundary     │
+└───────────────┬───────────────┘       └───────────────┬───────────────┘
+                │                                       │
+                └───────────────────┬───────────────────┘
+                                    │
+                                    ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│                        KUTTA CONDITION AT TE                          │
+│  Downwash angle w = -vInf * (CL / (pi * AR * e))                      │
+└───────────────────────────────────┬───────────────────────────────────┘
                                     │
          ┌──────────────────────────┴──────────────────────────┐
          ▼                                                     ▼
-┌───────────────────────────────────┐ ┌───────────────────────────────────┐
-│        SOURCE CODE & LOGIC        │ │         STATIC ASSET TREE         │
-│  `src/`                           │ │  `public/models/`                 │
-│  - React 19 Components            │ │  - boeing_787.glb (11.4 MB)       │
-│  - Three.js Simulation Engines    │ │  - concorde_free_...glb (6.0 MB)  │
-│  - TypeScript 5.7 Definitions     │ │  - f22_raptor.glb (27.8 MB)       │
-│  - Tailwind CSS 4 Styling         │ │  - airfoil.glb (11.4 KB)          │
-└─────────────────┬─────────────────┘ └─────────────────┬─────────────────┘
-                  │                                     │
-                  │ (Fast AST compilation)              │ (Direct copy pass)
-                  ▼                                     ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                              VITE BUILD                                │
-│                     `vite build` (< 3 seconds)                         │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                             PRODUCTION DIST                            │
-│  `dist/`                                                               │
-│  - index.html & optimized JS/CSS bundles                               │
-│  - static /models/*.glb available for runtime Three.js GLTFLoader      │
-└────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────┐   ┌─────────────────────────────────┐
+│     LAMB-OSEEN WINGTIP VORTICES │   │    TURBULENT WAKE DEFICIT       │
+│  - Helical swirl (v_theta)      │   │  - Viscous drag momentum loss   │
+│  - Roll-up from lower to upper  │   │  - Unsteady vortex shedding     │
+└─────────────────────────────────┘   └─────────────────────────────────┘
 ```
 
-### Clean `package.json` Specification
+#### Mathematical Formulations:
+1. **Solid Surface Boundary Avoidance (Ellipsoid + Cambered Surface)**:
+   $$\vec{v}_{\text{deflected}} = \vec{v}_{\infty} - \frac{R^3}{r^3} \left[ \vec{v}_{\infty} - 3(\vec{v}_{\infty} \cdot \hat{n})\hat{n} \right]$$
+   Prevents streamlines and particles from penetrating the fuselage or wing surfaces.
 
-```json
-{
-  "name": "aerodynamics-simulator",
-  "private": true,
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "vite build",
-    "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@tailwindcss/vite": "^4.0.9",
-    "@vitejs/plugin-react": "^4.3.4",
-    "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "gsap": "^3.12.7",
-    "lucide-react": "^0.475.0",
-    "motion": "^12.4.7",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "three": "^0.174.0",
-    "vite": "^6.2.0"
-  },
-  "devDependencies": {
-    "@types/express": "^4.17.21",
-    "@types/node": "^22.13.4",
-    "@types/react": "^19.0.10",
-    "@types/react-dom": "^19.0.4",
-    "@types/three": "^0.174.0",
-    "autoprefixer": "^10.4.20",
-    "esbuild": "^0.25.0",
-    "tailwindcss": "^4.0.9",
-    "tsx": "^4.19.3",
-    "typescript": "^5.7.3"
-  }
-}
-```
+2. **Downwash Induced Angle**:
+   $$w_{\text{downwash}} = -v_{\infty} \cdot \sin(\alpha) \cdot \left(0.5 + 0.5 \cdot \tanh\left(\frac{x - x_{\text{TE}}}{2.0}\right)\right)$$
+   Smoothly deflects the flow downward behind the trailing edge, matching actual aerodynamic downwash.
 
-### Execution Steps (Once Approved)
+3. **Lamb-Oseen Wingtip Vortex Velocity**:
+   $$v_{\theta}(r) = \frac{\Gamma}{2\pi r} \left(1 - e^{-r^2 / r_c^2}\right)$$
+   Where $\Gamma \propto C_L \cdot v_{\infty} \cdot c_{\text{mean}}$, curling the smoke filaments into distinct spiral vortices at both wingtips.
 
-1. **Relocate GLB Files**: Move `boeing_787.glb`, `concorde_free_with_interior.glb`, `f-22_raptor_-_fighter_jet_-_free.glb` (renamed to clean `f22_raptor.glb`), and `airfoil.glb` into `public/models/`.
-2. **Update `package.json`**: Replace invalid versions with the stable, compatible releases shown above.
-3. **Re-populate Dependencies**: Run `install_applet_dependencies` to ensure a clean, audited `node_modules` directory with working `vite` and `tsc` binaries.
-4. **Verify Build**: Run `compile_applet` and `lint_applet` to confirm zero errors and fast sub-second compilation.
+---
+
+### Component 3: Wind Tunnel Visualization & Smoke Ribbon Rendering
+
+- **Dual Visualization Modes**:
+  1. **Continuous Streamlines**: 3D extruded tubes with scientific velocity colormap (Cyan = high speed / suction, Emerald = laminar free-stream, Amber = stagnation, Crimson = turbulent separation).
+  2. **High-Density Particle Smoke**: Particles emitted from upstream rake needles at `x = -18`, carrying local streamline velocities, curling around wingtips, and exhibiting micro-turbulence in the wake.
+- **Rake Positioning**: Multi-height rake grid spanning the wingspan and fuselage height, automatically scaled according to the active aircraft's wingspan and chord length.
+- **Interactive Controls**: Users can toggle Streamlines, Smoke Particles, Force Vectors, and Pressure Heatmap seamlessly.
+
+---
+
+## 3. Verification & Validation Steps
+
+1. **Orientation Audit**:
+   - Verify Turkish Airlines Boeing 787 Dreamliner nose points upstream into the wind tunnel, wings extend symmetrically along the Z axis, and fuselage aligns with the floor rails.
+   - Verify F-22 Raptor stealth fighter faces forward into the oncoming wind with twin vertical tails downstream.
+   - Verify Concorde and NACA airfoil models are aligned consistently.
+2. **CFD Physics Audit**:
+   - Verify streamlines smoothly wrap over the nose and canopy without clipping.
+   - Verify downwash clearly bends downward behind the wing trailing edge as angle of attack increases.
+   - Verify wingtip vortices produce visible curling spirals at the wingtips.
+   - Verify stall condition ($AoA > 16^\circ$) triggers separation and turbulent eddy shedding.
+3. **Build & Performance**:
+   - Run `compile_applet` and `lint_applet` to confirm clean compilation and smooth 60 FPS rendering in WebGL.

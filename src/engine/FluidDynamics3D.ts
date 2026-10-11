@@ -163,180 +163,195 @@ export class FluidDynamics3D {
         camberPeak = (flapsDeg / 40) * 0.22;
       }
 
-      // --- A. FUSELAGE DISPLACEMENT (Slender Body of Revolution) ---
+      // --- A. NOSE STAGNATION & FOREBODY SOURCE FIELD ---
+      // Ahead of the aircraft nose, oncoming fluid smoothly parts radially around the radome
+      if (bx < noseX && bx > noseX - 4.5) {
+        const distNose = noseX - bx;
+        const rTrans = Math.hypot(by, bz);
+        const safeR = Math.max(0.08, rTrans);
+        const stagFactor = Math.pow(Math.max(0, 1 - distNose / 4.2), 2);
+        const deflSpeed = stagFactor * fusRadius * 0.42 * vInf;
+        // Radial outward push
+        v += ((by !== 0 ? by : 0.05) / safeR) * deflSpeed * cosA;
+        w += (bz / safeR) * deflSpeed;
+        u *= Math.max(0.2, 1.0 - stagFactor * 0.65); // Dynamic ram deceleration at stagnation point
+      }
+
+      // --- B. FUSELAGE DISPLACEMENT (Slender Body of Revolution with Boundary Enforcement) ---
       if (fusRadius > 0.1 && bx >= noseX && bx <= tailX) {
         const fusFrac = (bx - noseX) / (tailX - noseX);
-        const localFusR = fusRadius * Math.sin(fusFrac * Math.PI) * 1.1;
+        // Realistic fuselage profile: smooth radome dome -> cylindrical cabin -> tapered tail cone
+        const localFusR = fusRadius * Math.sin(Math.pow(fusFrac, 0.45) * Math.PI) * 1.15;
         const rTrans = Math.hypot(by, bz);
+        const safeR = Math.max(0.05, rTrans);
 
-        if (rTrans > 0.01 && rTrans < localFusR * 2.8) {
-          const disp = Math.pow(localFusR / Math.max(localFusR * 0.6, rTrans), 2) * 0.35 * vInf;
-          const vyLocal = (by / rTrans) * disp;
-          const vzLocal = (bz / rTrans) * disp;
-          // Transform back to tunnel coordinates
-          v += vyLocal * cosA;
-          u -= vyLocal * sinA;
-          w += vzLocal;
+        if (rTrans < localFusR * 2.8) {
+          const dispRatio = Math.min(1.0, Math.pow(localFusR / safeR, 2));
+          const deflSpeed = dispRatio * 0.38 * vInf;
+          v += ((by !== 0 ? by : 0.05) / safeR) * deflSpeed * cosA;
+          w += (bz / safeR) * deflSpeed;
         }
 
-        // Inside fuselage solid hull -> push outward
-        if (rTrans < localFusR * 1.05) {
-          const push = (localFusR * 1.05 - rTrans) * 3.0;
-          v += (by / (rTrans || 1)) * push * cosA;
-          w += (bz / (rTrans || 1)) * push;
+        // Strict solid hull boundary layer repulsion: Prevents streamlines from piercing the cockpit/cabin
+        if (rTrans < localFusR * 1.15) {
+          const push = (localFusR * 1.15 - rTrans) * 4.5;
+          v += ((by !== 0 ? by : 0.08) / safeR) * push * cosA;
+          w += (bz / safeR) * push;
+          u = Math.max(0.2 * vInf, u * 0.6);
         }
       }
 
-      // --- B. WING LIFT, BERNOULLI ACCELERATION & DEFLECTION ---
+      // --- C. WING LIFT, BERNOULLI ACCELERATION & CAMBER DEFLECTION ---
       // Wing bounds along span:
       const absZ = Math.abs(bz);
-      if (absZ <= halfSpan * 1.05) {
-        const spanFrac = absZ / halfSpan;
+      if (absZ <= halfSpan * 1.18) {
+        const spanFrac = Math.min(1.0, absZ / halfSpan);
         // Wing chord and leading edge position at this span station
         const sweepOffset = Math.tan((sweepDeg * Math.PI) / 180) * absZ * 0.55;
         const localLeX = (modelType.startsWith('naca') ? noseX : -1.8) + sweepOffset;
         const localTeX = (modelType.startsWith('naca') ? tailX : 4.5) + sweepOffset * 0.3;
         const localChord = Math.max(0.8, localTeX - localLeX);
+        const chordFrac = (bx - localLeX) / localChord;
 
-        if (bx >= localLeX - 2.5 && bx <= localTeX + 8.0) {
-          // Chordwise fraction (0 = leading edge, 1 = trailing edge)
-          const chordFrac = (bx - localLeX) / localChord;
+        // Wing thickness distribution (streamlined NACA envelope)
+        let tHalf = 0.36 * (1 - spanFrac * 0.42);
+        if (modelType === 'concorde' || modelType === 'f22') tHalf *= 0.65; // Razor-thin supersonic delta
 
-          // Wing thickness distribution (NACA-like envelope)
-          let tHalf = 0.35 * (1 - spanFrac * 0.45);
-          if (modelType === 'concorde' || modelType === 'f22') tHalf *= 0.65; // razor thin supersonic delta
+        // Wing camberline height
+        const wingY_camber = (camberPeak * Math.sin(Math.max(0, Math.min(1, chordFrac)) * Math.PI) - sinA * (bx - localLeX) * 0.45);
+        const distFromWing = Math.abs(by - wingY_camber);
 
-          // 1. Upwash ahead of wing leading edge (induced by circulation)
-          if (chordFrac < 0 && chordFrac > -0.6) {
-            const upwashStrength = Math.max(0.1, cl) * vInf * 0.35 * (1 - spanFrac * 0.3);
-            v += upwashStrength * (1 + chordFrac / 0.6) * cosA;
-          }
+        // 1. Ahead of wing leading edge: Flow splits at stagnation line
+        if (chordFrac < 0 && chordFrac > -0.55) {
+          const leDist = -chordFrac * localChord;
+          const leInfluence = Math.exp(-leDist / 0.9) * (1 - spanFrac * 0.25);
+          const splitDir = by >= wingY_camber ? 1.0 : -1.0;
+          v += splitDir * leInfluence * 0.38 * vInf * cosA;
+          // Induced circulation upwash
+          v += Math.max(0.1, cl) * vInf * 0.28 * leInfluence * cosA;
+        }
 
-          // 2. Over the wing surface: flow deflection & Bernoulli acceleration
-          if (chordFrac >= 0 && chordFrac <= 1.0) {
-            const wingY_camber = (camberPeak * Math.sin(chordFrac * Math.PI) - sinA * (bx - localLeX) * 0.5);
-            const distFromWing = Math.abs(by - wingY_camber);
+        // 2. Over the wing surface: flow deflection & Bernoulli acceleration
+        if (chordFrac >= 0 && chordFrac <= 1.0) {
+          if (distFromWing < 2.8) {
+            const proximity = Math.exp(-distFromWing / 0.85);
 
-            if (distFromWing < 2.5) {
-              const proximity = Math.exp(-distFromWing / 0.85);
-
-              if (by >= wingY_camber) {
-                // UPPER SUCTION SURFACE:
-                if (!isStalled || chordFrac < 0.28) {
-                  // Attached laminar flow: Bernoulli acceleration
-                  const suctionPeak = (Math.max(0.2, cl) * 0.65) / Math.sqrt(Math.max(0.08, chordFrac));
-                  const accel = Math.min(1.2 * vInf, suctionPeak * vInf * proximity);
-                  u += accel;
-                  // Flow conforms to upper convex contour (pulled towards surface)
-                  const contourSlope = -Math.cos(chordFrac * Math.PI) * 0.4;
-                  v += contourSlope * vInf * proximity * 0.6;
-                } else {
-                  // STALL: Flow separation over upper aft surface!
-                  isSeparated = true;
-                  const stallPhase = timeSec * 6.0 + bx * 2.0;
-                  const eddy = Math.sin(stallPhase) * vInf * 0.65;
-                  u -= Math.abs(eddy) * 0.7; // Velocity deficit / reverse flow
-                  v += eddy * 0.8; // Vertical buffeting
-                  w += Math.cos(stallPhase * 0.8) * vInf * 0.35; // Spanwise turbulence
-                }
+            if (by >= wingY_camber) {
+              // UPPER SUCTION SURFACE:
+              if (!isStalled || chordFrac < 0.26) {
+                // Attached laminar flow: Bernoulli acceleration (higher speed, negative Cp)
+                const suctionPeak = (Math.max(0.2, cl) * 0.72) / Math.sqrt(Math.max(0.07, chordFrac));
+                const accel = Math.min(1.35 * vInf, suctionPeak * vInf * proximity);
+                u += accel;
+                // Flow conforms to upper convex camber contour
+                const contourSlope = -Math.cos(chordFrac * Math.PI) * 0.42;
+                v += contourSlope * vInf * proximity * 0.65;
               } else {
-                // LOWER COMPRESSION SURFACE:
-                const compression = Math.max(0, cl) * 0.25 * vInf * proximity;
-                u -= compression; // Flow slows down slightly
-                v -= 0.2 * vInf * proximity; // Deflected downwards
+                // STALL: Boundary layer separation & turbulent wake eddies
+                isSeparated = true;
+                const stallPhase = timeSec * 6.5 + bx * 2.2;
+                const eddy = Math.sin(stallPhase) * vInf * 0.75;
+                u -= Math.abs(eddy) * 0.75; // Viscous wake velocity deficit
+                v += eddy * 0.85;           // Severe vertical buffeting
+                w += Math.cos(stallPhase * 0.85) * vInf * 0.4; // Spanwise turbulence
               }
-
-              // Solid wing penetration avoidance:
-              if (distFromWing < tHalf) {
-                const pushY = (tHalf - distFromWing) * 3.5;
-                v += (by >= wingY_camber ? pushY : -pushY) * cosA;
-              }
-            }
-          }
-
-          // 3. Aft of trailing edge: Downwash field (Prandtl lifting line)
-          if (chordFrac > 1.0) {
-            const aftDist = bx - localTeX;
-            const downwashAngle = (2.2 * Math.max(0.1, cl)) / (Math.PI * (halfSpan * 2 / rootChord + 2.0));
-            const downwashDecay = Math.exp(-aftDist / 12.0) * (1 - spanFrac * 0.3);
-            const dw = Math.tan(downwashAngle) * vInf * downwashDecay * 1.8;
-            v -= dw * cosA;
-
-            // Flaps extra downwash jet
-            if (flapsDeg > 0 && absZ < halfSpan * 0.65) {
-              const flapDrop = (flapsDeg / 40) * 0.55 * vInf * Math.exp(-aftDist / 8.0);
-              v -= flapDrop * cosA;
+            } else {
+              // LOWER COMPRESSION SURFACE:
+              const compression = Math.max(0, cl) * 0.28 * vInf * proximity;
+              u -= compression;            // Deceleration (positive Cp)
+              v -= 0.22 * vInf * proximity; // Deflected downwards
             }
 
-            // Viscous wake deficit behind trailing edge
-            const wakeDistY = Math.abs(by + (chordFrac - 1.0) * 0.2);
-            if (wakeDistY < 0.85) {
-              const deficit = 0.28 * vInf * Math.exp(-wakeDistY / 0.4) / Math.sqrt(Math.max(1, aftDist));
-              u -= deficit;
+            // Solid wing boundary: Never allow streamlines to pierce upper/lower wing skin
+            if (distFromWing < tHalf * 1.12) {
+              const pushY = (tHalf * 1.12 - distFromWing) * 4.8;
+              v += (by >= wingY_camber ? pushY : -pushY) * cosA;
             }
           }
         }
 
-        // --- C. 3D WINGTIP VORTICES (Lamb-Oseen Helical Vortex System) ---
-        // Vortices trail downstream from the left and right wingtips:
-        const tipX0 = localLeX + (localTeX - localLeX) * 0.75;
-        if (p.x >= tipX0 - 1.0) {
-          const distFromTipZ = absZ - halfSpan;
-          const vortexCoreY = 0.0 - (p.x - tipX0) * 0.08 * sinA;
-          const rVortex = Math.hypot(distFromTipZ, p.y - vortexCoreY);
+        // 3. Aft of trailing edge: Downwash field (Prandtl lifting line theory)
+        if (chordFrac > 1.0) {
+          const aftDist = bx - localTeX;
+          const aspectEff = Math.max(2.5, (halfSpan * 2) / rootChord);
+          const downwashAngle = (2.4 * Math.max(0.12, cl)) / (Math.PI * aspectEff);
+          const downwashDecay = Math.exp(-aftDist / 14.0) * (1 - spanFrac * 0.25);
+          const dw = Math.tan(downwashAngle) * vInf * downwashDecay * 2.1;
+          v -= dw * cosA;
 
-          if (rVortex < 3.2 && rVortex > 0.04) {
-            const coreRadius = 0.35 + (p.x - tipX0) * 0.025; // Viscous core diffusion
-            const gamma = Math.max(0.15, cl) * vInf * 1.8; // Vortex circulation strength
+          // Flaps extra downwash jet
+          if (flapsDeg > 0 && absZ < halfSpan * 0.65) {
+            const flapDrop = (flapsDeg / 40) * 0.65 * vInf * Math.exp(-aftDist / 9.0);
+            v -= flapDrop * cosA;
+          }
+
+          // Viscous wake deficit behind trailing edge
+          const wakeDistY = Math.abs(by - (wingY_camber - (chordFrac - 1.0) * 0.25));
+          if (wakeDistY < 0.95) {
+            const deficit = 0.32 * vInf * Math.exp(-wakeDistY / 0.42) / Math.sqrt(Math.max(1, aftDist * 0.8));
+            u -= deficit;
+          }
+        }
+
+        // --- D. 3D WINGTIP VORTICES (Lamb-Oseen Helical Vortex System) ---
+        // Trailing downstream from both wingtips (z = ±halfSpan)
+        const tipX0 = localLeX + (localTeX - localLeX) * 0.85;
+        if (bx >= tipX0 - 0.5) {
+          const distFromTipZ = absZ - halfSpan;
+          const vortexCoreY = wingY_camber - (bx - tipX0) * 0.09 * sinA;
+          const rVortex = Math.hypot(distFromTipZ, by - vortexCoreY);
+
+          if (rVortex < 3.8 && rVortex > 0.04) {
+            const coreRadius = 0.28 + (bx - tipX0) * 0.022; // Viscous core diffusion
+            const gamma = Math.max(0.2, cl) * vInf * 2.2;  // Circulation strength
             // Lamb-Oseen tangential velocity profile
             const vTan = (gamma / (2 * Math.PI * rVortex)) * (1 - Math.exp(-(rVortex * rVortex) / (coreRadius * coreRadius)));
 
-            const dy = p.y - vortexCoreY;
+            const dy = by - vortexCoreY;
             const dz = distFromTipZ;
 
-            // Port (left, +Z): counter-clockwise swirl
-            // Starboard (right, -Z): clockwise swirl
+            // Port (left, +Z): flow rolls outward from bottom and wraps up/inward over the tip
+            // Starboard (right, -Z): flow rolls outward from bottom and wraps up/inward over the tip
             const swirlSign = bz > 0 ? 1 : -1;
             const vInducedY = swirlSign * (-dz / rVortex) * vTan;
             const vInducedZ = swirlSign * (dy / rVortex) * vTan;
 
-            v += vInducedY;
+            v += vInducedY * cosA;
             w += vInducedZ;
           }
         }
 
-        // --- D. FOREBODY CHINE VORTICES (F-22 & Concorde Delta) ---
-        if ((modelType === 'f22' || modelType === 'concorde') && aoaDeg > 4 && p.x > noseX + 1.5 && p.x < localTeX) {
-          const chineCoreZ = 1.4 + (p.x - noseX) * 0.18;
+        // --- E. FOREBODY CHINE VORTICES (F-22 & Concorde Ogival Delta) ---
+        if ((modelType === 'f22' || modelType === 'concorde') && aoaDeg > 3 && bx > noseX + 1.2 && bx < localTeX) {
+          const chineCoreZ = 1.2 + (bx - noseX) * 0.19;
           for (const sign of [-1, 1]) {
-            const rChine = Math.hypot(p.z - sign * chineCoreZ, p.y - 0.4);
-            if (rChine < 1.6 && rChine > 0.05) {
-              const chineGamma = (aoaDeg / 20) * vInf * 0.9;
-              const chineVTan = (chineGamma / (2 * Math.PI * rChine)) * (1 - Math.exp(-(rChine * rChine) / 0.12));
-              v += sign * ((p.z - sign * chineCoreZ) / rChine) * chineVTan;
-              w += -sign * ((p.y - 0.4) / rChine) * chineVTan;
-              u += chineVTan * 0.4; // Axial vortex core acceleration
+            const rChine = Math.hypot(bz - sign * chineCoreZ, by - 0.35);
+            if (rChine < 1.8 && rChine > 0.05) {
+              const chineGamma = (aoaDeg / 18) * vInf * 1.1;
+              const chineVTan = (chineGamma / (2 * Math.PI * rChine)) * (1 - Math.exp(-(rChine * rChine) / 0.14));
+              v += sign * ((bz - sign * chineCoreZ) / rChine) * chineVTan * cosA;
+              w += -sign * ((by - 0.35) / rChine) * chineVTan;
+              u += chineVTan * 0.35; // Axial vortex core acceleration
             }
           }
         }
 
-        // --- E. ENGINE INTAKE SUCTION & EXHAUST JET ---
+        // --- F. ENGINE INTAKE SUCTION & EXHAUST JET ---
         if (modelType === 'airliner') {
           // Underslung turbofan nacelles at z = ±3.5, y = -1.5, x = -0.5
           for (const nz of [-3.5, 3.5]) {
-            const distNacelle = Math.hypot(p.z - nz, p.y + 1.5, p.x + 0.5);
+            const distNacelle = Math.hypot(bz - nz, by + 1.5, bx + 0.5);
             if (distNacelle < 1.8 && distNacelle > 0.05) {
-              // Engine airflow acceleration through fan
-              u += 0.35 * vInf * Math.exp(-distNacelle / 1.0);
+              u += 0.38 * vInf * Math.exp(-distNacelle / 1.0);
             }
           }
         } else if (modelType === 'f22' && airspeed_kts >= 450) {
-          // Supersonic afterburner exhaust jet behind twin nozzles (x > 6.5, z = ±0.7)
-          if (p.x > 6.5) {
+          // Supersonic afterburner exhaust jet behind twin nozzles (bx > 5.5, bz = ±0.67)
+          if (bx > 5.5) {
             for (const nz of [-0.67, 0.67]) {
-              const rJet = Math.hypot(p.z - nz, p.y + 0.38);
-              if (rJet < 1.2) {
-                u += (airspeed_kts / 400) * 0.8 * vInf * Math.exp(-rJet / 0.6);
+              const rJet = Math.hypot(bz - nz, by + 0.38);
+              if (rJet < 1.3) {
+                u += (airspeed_kts / 400) * 0.85 * vInf * Math.exp(-rJet / 0.6);
               }
             }
           }

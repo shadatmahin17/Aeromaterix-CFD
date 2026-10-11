@@ -21,8 +21,8 @@ export const GLB_MODEL_REGISTRY: Record<string, GlbModelMetadata> = {
     name: 'Boeing 787 Dreamliner',
     glbPath: '/models/boeing_787.glb',
     targetLength: 14.5,
-    // Model orientation: Align nose into wind (-X)
-    rotationOffset: [0, Math.PI / 2, 0],
+    // Model orientation: Align nose into wind (-X), tail downstream (+X)
+    rotationOffset: [0, -Math.PI / 2, 0],
     positionOffset: [0, 0, 0],
     scaleMultiplier: 1.0,
     fileSizeLabel: '11.0 MB CAD',
@@ -34,8 +34,8 @@ export const GLB_MODEL_REGISTRY: Record<string, GlbModelMetadata> = {
     name: 'Concorde SST (Supersonic)',
     glbPath: '/models/concorde_free_with_interior.glb',
     targetLength: 15.0,
-    // Concorde length along X/Z: align nose facing -X
-    rotationOffset: [0, -Math.PI / 2, 0],
+    // Concorde length along X: rotate 180 deg to align needle nose facing -X into wind
+    rotationOffset: [0, Math.PI, 0],
     positionOffset: [0, 0, 0],
     scaleMultiplier: 1.0,
     fileSizeLabel: '5.8 MB PBR',
@@ -60,7 +60,8 @@ export const GLB_MODEL_REGISTRY: Record<string, GlbModelMetadata> = {
     name: 'F-22 Raptor Stealth Fighter',
     glbPath: '/models/f22_raptor.glb',
     targetLength: 13.0,
-    rotationOffset: [0, 0, 0],
+    // F-22 native CAD nose is at +X: rotate 180 deg to face oncoming wind (-X)
+    rotationOffset: [0, Math.PI, 0],
     positionOffset: [0, 0, 0],
     scaleMultiplier: 1.0,
     fileSizeLabel: '26.5 MB PBR',

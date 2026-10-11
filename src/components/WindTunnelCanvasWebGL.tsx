@@ -225,16 +225,46 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
       new THREE.Color('#fbbf24'),
     ];
 
-    for (let i = 0; i < particleCount; i++) {
-      pPositions[i * 3] = -22 + Math.random() * 44;
-      pPositions[i * 3 + 1] = -4 + Math.random() * 8;
-      pPositions[i * 3 + 2] = -7 + Math.random() * 14;
-      pVelocities[i] = 0.35 + Math.random() * 0.25;
+    const spawnParticle = (idx: number, isInitial = false) => {
+      // 40% wing streamtubes, 30% wingtip vortices, 20% fuselage/canopy, 10% ambient
+      const roll = Math.random();
+      let y = 0;
+      let z = 0;
 
-      const c = palette[i % palette.length];
-      pColors[i * 3] = c.r;
-      pColors[i * 3 + 1] = c.g;
-      pColors[i * 3 + 2] = c.b;
+      if (roll < 0.40) {
+        // Wing streamtubes
+        y = -0.8 + Math.random() * 2.2;
+        z = -7.5 + Math.random() * 15.0;
+      } else if (roll < 0.70) {
+        // Wingtip vortex roll-up cores (starboard or port)
+        const tipSign = Math.random() > 0.5 ? 1 : -1;
+        const tipSpan = 6.8 + (Math.random() - 0.5) * 1.2;
+        z = tipSign * tipSpan;
+        y = -0.3 + Math.random() * 1.0;
+      } else if (roll < 0.90) {
+        // Fuselage & cockpit canopy smoke stream
+        y = -0.6 + Math.random() * 2.0;
+        z = -1.2 + Math.random() * 2.4;
+      } else {
+        // Ambient wind tunnel background
+        y = -3.5 + Math.random() * 7.0;
+        z = -8.5 + Math.random() * 17.0;
+      }
+
+      const x = isInitial ? (-21 + Math.random() * 42) : -21;
+      pPositions[idx * 3] = x;
+      pPositions[idx * 3 + 1] = y;
+      pPositions[idx * 3 + 2] = z;
+      pVelocities[idx] = 0.38 + Math.random() * 0.22;
+
+      const c = palette[idx % palette.length];
+      pColors[idx * 3] = c.r;
+      pColors[idx * 3 + 1] = c.g;
+      pColors[idx * 3 + 2] = c.b;
+    };
+
+    for (let i = 0; i < particleCount; i++) {
+      spawnParticle(i, true);
     }
 
     const pGeo = new THREE.BufferGeometry();
@@ -242,10 +272,10 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
     pGeo.setAttribute('color', new THREE.BufferAttribute(pColors, 3));
 
     const pMat = new THREE.PointsMaterial({
-      size: 0.16,
+      size: 0.22,
       vertexColors: true,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.88,
       blending: THREE.AdditiveBlending,
     });
 
@@ -338,10 +368,23 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
             }
           }
 
-          if (pos[i * 3] > 22 || Math.abs(pos[i * 3 + 1]) > 8 || Math.abs(pos[i * 3 + 2]) > 13) {
-            pos[i * 3] = -22;
-            pos[i * 3 + 1] = -4 + Math.random() * 8;
-            pos[i * 3 + 2] = -7 + Math.random() * 14;
+          if (pos[i * 3] > 22 || Math.abs(pos[i * 3 + 1]) > 8 || Math.abs(pos[i * 3 + 2]) > 14) {
+            pos[i * 3] = -21;
+            const roll = Math.random();
+            if (roll < 0.45) {
+              pos[i * 3 + 1] = -0.8 + Math.random() * 2.2;
+              pos[i * 3 + 2] = -7.5 + Math.random() * 15.0;
+            } else if (roll < 0.75) {
+              const tipSign = Math.random() > 0.5 ? 1 : -1;
+              pos[i * 3 + 1] = -0.3 + Math.random() * 1.0;
+              pos[i * 3 + 2] = tipSign * (6.8 + (Math.random() - 0.5) * 1.2);
+            } else if (roll < 0.90) {
+              pos[i * 3 + 1] = -0.6 + Math.random() * 2.0;
+              pos[i * 3 + 2] = -1.2 + Math.random() * 2.4;
+            } else {
+              pos[i * 3 + 1] = -3.5 + Math.random() * 7.0;
+              pos[i * 3 + 2] = -8.5 + Math.random() * 17.0;
+            }
           }
         }
         particlesPointsRef.current.geometry.attributes.position.needsUpdate = true;
@@ -552,8 +595,24 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
     if (!params.show_streamlines) return;
 
     const linesGroup = streamlinesGroupRef.current;
-    const spanOffsets = [-5.2, -3.6, -2.0, -0.6, 0.6, 2.0, 3.6, 5.2];
-    const rakeHeights = [-1.4, 0.3, 1.5];
+    
+    // Model-tailored span stations and wingtip vortex positioning
+    let halfSpan = 6.8;
+    if (params.modelType === 'airliner') halfSpan = 9.2;
+    else if (params.modelType === 'concorde') halfSpan = 4.8;
+    else if (params.modelType === 'naca2412' || params.modelType === 'naca0012') halfSpan = 7.0;
+
+    // Span offsets: Wingtip vortices (±halfSpan), mid-wings, and fuselage streamlines
+    const spanOffsets = [
+      -halfSpan * 1.02, -halfSpan * 0.98, // Starboard wingtip vortex pair
+      -halfSpan * 0.65, -halfSpan * 0.35, // Starboard mid-wing & inboard
+      -1.2, -0.4, 0.0, 0.4, 1.2,          // Fuselage & canopy lines
+      halfSpan * 0.35, halfSpan * 0.65,   // Port inboard & mid-wing
+      halfSpan * 0.98, halfSpan * 1.02,   // Port wingtip vortex pair
+    ];
+
+    // Rake heights: Under-wing compression, stagnation chord, upper suction crest, canopy
+    const rakeHeights = [-0.85, -0.15, 0.55, 1.35];
 
     const fluid3DParams: Fluid3DParams = {
       modelType: params.modelType,
@@ -570,23 +629,28 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
 
     spanOffsets.forEach((z) => {
       rakeHeights.forEach((y) => {
-        const startPt = { x: -20, y, z };
-        const pts3D = FluidDynamics3D.traceStreamline(startPt, fluid3DParams, 38, 1.1);
+        // Upstream wind tunnel inlet rake at x = -21
+        const startPt = { x: -21, y, z };
+        // High-precision RK2 integration (65 steps at ds = 0.65 for smooth contouring)
+        const pts3D = FluidDynamics3D.traceStreamline(startPt, fluid3DParams, 65, 0.65);
 
-        if (pts3D.length > 3) {
+        if (pts3D.length > 5) {
           const points = pts3D.map((p) => new THREE.Vector3(p.x, p.y, p.z));
           const curve = new THREE.CatmullRomCurve3(points);
-          const tubeGeo = new THREE.TubeGeometry(curve, 32, 0.045, 6, false);
+          const isVortexFilament = Math.abs(Math.abs(z) - halfSpan) < 0.4;
+          const tubeRadius = isVortexFilament ? 0.055 : 0.042;
+          const tubeGeo = new THREE.TubeGeometry(curve, 52, tubeRadius, 6, false);
 
           const isSeparatedFilament = pts3D.some((p) => p.isSeparated);
+          // Color coding: Cyan for suction/vortices, Emerald for laminar, Crimson for stall
           const tubeColor = isSeparatedFilament || (telemetry.isStalled && y > 0.0)
             ? 0xef4444
-            : (y > 0.5 ? 0x00f0ff : 0x10b981);
+            : (isVortexFilament ? 0x00f0ff : (y > 0.3 ? 0x38bdf8 : 0x10b981));
 
           const tubeMat = new THREE.MeshBasicMaterial({
             color: tubeColor,
             transparent: true,
-            opacity: 0.68,
+            opacity: isVortexFilament ? 0.85 : 0.68,
           });
           linesGroup.add(new THREE.Mesh(tubeGeo, tubeMat));
         }

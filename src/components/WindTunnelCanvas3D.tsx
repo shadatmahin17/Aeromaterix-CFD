@@ -569,8 +569,17 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
 
     // 8. Render Dynamic High-Density 3D Smoke Streamlines (Fluid Dynamics Rake)
     if (params.show_streamlines) {
-      const rakeZ = [-5.5, -3.8, -2.2, -0.8, 0.8, 2.2, 3.8, 5.5];
-      const rakeY = [-1.8, -0.6, 0.4, 1.4, 2.3];
+      let halfSpan = 6.8;
+      if (params.modelType === 'airliner') halfSpan = 9.2;
+      else if (params.modelType === 'concorde') halfSpan = 4.8;
+      else if (params.modelType === 'naca2412' || params.modelType === 'naca0012') halfSpan = 7.0;
+
+      const rakeZ = [
+        -halfSpan * 1.0, -halfSpan * 0.65, -halfSpan * 0.35,
+        -1.2, -0.4, 0.0, 0.4, 1.2,
+        halfSpan * 0.35, halfSpan * 0.65, halfSpan * 1.0
+      ];
+      const rakeY = [-0.85, -0.15, 0.55, 1.35];
 
       ctx.save();
       ctx.lineWidth = Math.max(1.2, 1.6 * params.smoke_density);
@@ -579,8 +588,8 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
         const z = rakeZ[rkIdx];
         for (let ryIdx = 0; ryIdx < rakeY.length; ryIdx++) {
           const y = rakeY[ryIdx];
-          const startPt = { x: -16, y, z };
-          const pts = FluidDynamics3D.traceStreamline(startPt, fluid3DParams, 36, 0.95);
+          const startPt = { x: -21, y, z };
+          const pts = FluidDynamics3D.traceStreamline(startPt, fluid3DParams, 65, 0.65);
 
           if (pts.length > 2) {
             ctx.beginPath();

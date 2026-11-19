@@ -25,4 +25,4 @@ Allow: /
 User-agent: Applebot
 Allow: /
 
-Sitemap: https://ais-pre-2xrg3hlbd7qx4aaq2zsfpz-707081219895.asia-east1.run.app/sitemap.xml
+Sitemap: https://aerolab.shadatmahin.site/sitemap.xml

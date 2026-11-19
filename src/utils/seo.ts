@@ -1,13 +1,16 @@
+const CANONICAL_ORIGIN = 'https://aerolab.shadatmahin.site';
+
 /**
- * Synchronizes runtime canonical URL, OpenGraph URL, image absolute URLs,
- * and JSON-LD structured data URL with the active origin and pathname.
+ * Keeps canonical URL, OpenGraph URL, image URLs, and JSON-LD structured data
+ * anchored to the production domain (https://aerolab.shadatmahin.site/) while
+ * preserving the active pathname.
  */
 export function syncRuntimeSeoMetadata(): void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
-  const origin = window.location.origin;
-  const canonicalUrl = `${origin}${window.location.pathname}`;
-  const absoluteLogoUrl = `${origin}/aerolab-logo.png`;
+  const pathname = window.location.pathname || '/';
+  const canonicalUrl = `${CANONICAL_ORIGIN}${pathname}`;
+  const absoluteLogoUrl = `${CANONICAL_ORIGIN}/aerolab-logo.png`;
 
   const canonicalLink = document.querySelector('link[rel="canonical"]');
   if (canonicalLink) {

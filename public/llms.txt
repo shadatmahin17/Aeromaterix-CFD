@@ -2,7 +2,7 @@
 
 > AeroLab is a browser-based real-time 3D computational fluid dynamics (CFD) wind tunnel and flight physics workstation. It combines 3D GLB aircraft CAD models, a Biot-Savart horseshoe vortex lattice solver, 3D Euclidean Distance Transform (EDT) surface normal fields, and live aerodynamic polar charts in a responsive web application.
 
-- Canonical URL: https://ais-pre-2xrg3hlbd7qx4aaq2zsfpz-707081219895.asia-east1.run.app/
+- Canonical URL: https://aerolab.shadatmahin.site/
 - Category: Aerospace Engineering Simulation, Physics Education, 3D WebGL CFD Visualization
 - Access: Free, zero-install web application (runs in modern desktop and mobile browsers with automatic Software 3D Canvas fallback when WebGL2 is unavailable)
 

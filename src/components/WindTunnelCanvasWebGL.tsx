@@ -593,6 +593,7 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
 
           glbRootRef.current = root;
           aircraftGroupRef.current.add(root);
+
           setSurfaceVersion((v) => v + 1);
           setModelLoading(false);
 

@@ -3,32 +3,28 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { AircraftModelType } from '../types/aerodynamics';
 import { AIRCRAFT_MODELS } from '../utils/airfoilGenerators';
-import { 
-  loadGlbAircraftModel, 
-  GLB_MODEL_REGISTRY, 
-  applyCfdPressureHeatmap, 
-  restoreOriginalGlbMaterials, 
+import {
+  loadGlbAircraftModel,
+  GLB_MODEL_REGISTRY,
+  applyCfdPressureHeatmap,
+  restoreOriginalGlbMaterials,
   applyWireframeShading,
   createAeroForceVectorsGroup,
-  updateAeroForceVectors
+  updateAeroForceVectors,
 } from '../utils/aircraftGlbModels';
 import { getAircraft3DModel, computeFaceNormal, Vertex3D } from '../utils/aircraft3DGeometry';
 import { createSafeWebGLRenderer } from '../utils/webglSupport';
-import { 
-  X, 
-  RotateCw, 
-  Box, 
-  Layers, 
-  Camera, 
-  Sun, 
-  Wind, 
-  Activity, 
-  Check, 
-  SlidersHorizontal,
-  Compass,
-  Download,
-  Flame,
-  Plane
+import { PrecisionSlider } from './PrecisionSlider';
+import {
+  X,
+  RotateCw,
+  Box,
+  Camera,
+  Sun,
+  Wind,
+  Activity,
+  Check,
+  Plane,
 } from 'lucide-react';
 
 interface ModelViewerModalProps {
@@ -36,7 +32,7 @@ interface ModelViewerModalProps {
   onClose: () => void;
   activeModelType?: AircraftModelType;
   onSelectModel?: (modelType: AircraftModelType) => void;
-  onApplyToWindTunnel?: (options: { modelType: AircraftModelType; landingGear: boolean }) => void;
+  onApplyToWindTunnel?: (modelType: AircraftModelType) => void;
 }
 
 export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
@@ -75,10 +71,8 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
   const [shadingMode, setShadingMode] = useState<'pbr' | 'cfdHeatmap' | 'wireframe' | 'xray'>('pbr');
   const [lightingPreset, setLightingPreset] = useState<'tunnel' | 'studio' | 'sunset' | 'cyber'>('tunnel');
   const [showForceVectors, setShowForceVectors] = useState<boolean>(true);
-  const [showStreamlines, setShowStreamlines] = useState<boolean>(true);
   const [inspectorAoA, setInspectorAoA] = useState<number>(4.0);
   const [isStalled, setIsStalled] = useState<boolean>(false);
-  const [landingGearDeployed, setLandingGearDeployed] = useState<boolean>(false);
 
   // Mesh stats
   const [meshCount, setMeshCount] = useState<number>(0);
@@ -86,7 +80,7 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
 
   // Sync with prop when opened
   useEffect(() => {
-    if (activeModelType) {
+    if (isOpen && activeModelType) {
       setSelectedModel(activeModelType);
     }
   }, [activeModelType, isOpen]);
@@ -452,7 +446,7 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
         modelRootRef.current = root;
         scene.add(root);
 
-        // Count meshes and vertices
+        // Count meshes and vertices from CAD root
         let mCount = 0;
         let vCount = 0;
         root.traverse((c) => {
@@ -815,28 +809,27 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
               </div>
 
               {/* Angle of Attack Pitch Slider */}
-              <div className="p-3 rounded-lg bg-[var(--bg)] border border-[var(--border)] flex flex-col gap-2">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-[#161A1D] font-semibold">Test Angle of Attack:</span>
-                  <span className="font-mono tabular-nums text-[#1769AA] font-bold">{inspectorAoA.toFixed(1)}°</span>
-                </div>
-                <input
-                  type="range"
-                  min="-10"
-                  max="28"
-                  step="0.5"
+              <div className="p-3 rounded-xl bg-[var(--bg)] border border-[var(--border)] flex flex-col gap-2.5">
+                <PrecisionSlider
+                  id="inspector-aoa-slider"
+                  label="Test Angle of Attack"
+                  subLabel="(α)"
+                  min={-10}
+                  max={28}
+                  step={0.5}
                   value={inspectorAoA}
-                  onChange={(e) => setInspectorAoA(parseFloat(e.target.value))}
-                  className="w-full accent-[#1769AA] cursor-pointer"
+                  displayValue={`${inspectorAoA >= 0 ? '+' : ''}${inspectorAoA.toFixed(1)}°`}
+                  badgeTone={isStalled ? 'danger' : 'accent'}
+                  onChange={setInspectorAoA}
                 />
-                <div className="flex justify-between items-center text-[10px] text-[#5C6670] font-mono">
+                <div className="flex justify-between items-center text-[10px] text-[#5C6670] font-mono pt-1 border-t border-[var(--border)]">
                   <span>-10°</span>
                   <button
                     onClick={() => setIsStalled(!isStalled)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono transition-colors border ${
+                    className={`px-2.5 py-1 rounded-md text-[10px] font-bold font-mono transition-colors border cursor-pointer ${
                       isStalled
                         ? 'bg-red-50 text-red-700 border-red-300'
-                        : 'bg-[var(--surface)] text-[#5C6670] border-[var(--border)]'
+                        : 'bg-[var(--surface)] text-[#5C6670] border-[var(--border)] hover:text-[#161A1D]'
                     }`}
                   >
                     {isStalled ? 'STALL ACTIVE' : 'Attached Flow'}
@@ -852,31 +845,17 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
                 <Wind className="w-3.5 h-3.5 text-[#1769AA]" />
                 3D Force Vectors
               </span>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => setShowForceVectors(!showForceVectors)}
-                  className={`py-2 px-3 rounded-lg text-xs font-semibold transition-colors border flex items-center justify-center gap-1.5 ${
-                    showForceVectors
-                      ? 'bg-[var(--accent-light)] text-[#1769AA] border-[#1769AA]'
-                      : 'bg-[var(--bg)] text-[#5C6670] border-[var(--border)] hover:text-[#161A1D]'
-                  }`}
-                >
-                  <Activity className="w-3.5 h-3.5" />
-                  <span>{showForceVectors ? 'Vectors On' : 'Vectors Off'}</span>
-                </button>
-
-                <button
-                  onClick={() => setLandingGearDeployed(!landingGearDeployed)}
-                  className={`py-2 px-3 rounded-lg text-xs font-semibold transition-colors border flex items-center justify-center gap-1.5 ${
-                    landingGearDeployed
-                      ? 'bg-[var(--accent-light)] text-[#1769AA] border-[#1769AA]'
-                      : 'bg-[var(--bg)] text-[#5C6670] border-[var(--border)] hover:text-[#161A1D]'
-                  }`}
-                >
-                  <Compass className="w-3.5 h-3.5" />
-                  <span>{landingGearDeployed ? 'Gear: Down' : 'Gear: Up'}</span>
-                </button>
-              </div>
+              <button
+                onClick={() => setShowForceVectors(!showForceVectors)}
+                className={`w-full py-2 px-3 rounded-xl text-xs font-semibold transition-colors border flex items-center justify-center gap-1.5 cursor-pointer ${
+                  showForceVectors
+                    ? 'bg-[var(--accent-light)] text-[#1769AA] border-[#1769AA]'
+                    : 'bg-[var(--bg)] text-[#5C6670] border-[var(--border)] hover:text-[#161A1D]'
+                }`}
+              >
+                <Activity className="w-3.5 h-3.5" />
+                <span>{showForceVectors ? 'Lift & Drag Vectors On' : 'Lift & Drag Vectors Off'}</span>
+              </button>
             </div>
 
             {/* 3. Studio Lighting Atmosphere */}
@@ -929,7 +908,7 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
               {onApplyToWindTunnel && (
                 <button
                   onClick={() => {
-                    onApplyToWindTunnel({ modelType: selectedModel, landingGear: landingGearDeployed });
+                    onApplyToWindTunnel(selectedModel);
                     onClose();
                   }}
                   className="w-full mt-2 py-2.5 rounded-lg bg-[#1769AA] hover:bg-[#145a92] text-white font-semibold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-sm"

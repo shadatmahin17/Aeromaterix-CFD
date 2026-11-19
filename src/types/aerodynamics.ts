@@ -47,7 +47,6 @@ export interface SimulationParams {
   show_shockwaves: boolean;
   audio_enabled: boolean;
   renderEngine?: 'webgl' | 'canvas';
-  landingGear?: boolean;
   renderShading?: 'pbr' | 'wireframe' | 'cfdHeatmap' | 'xray';
 }
 

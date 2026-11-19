@@ -404,3 +404,4 @@ export function updateAeroForceVectors(
     cpRing.position.set(cpShiftX, 0, 0);
   }
 }
+

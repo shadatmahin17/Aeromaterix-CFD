@@ -45,7 +45,6 @@ const INITIAL_PARAMS: SimulationParams = {
   show_shockwaves: true,
   audio_enabled: false,
   renderEngine: 'webgl',
-  landingGear: false,
   renderShading: 'pbr',
 };
 
@@ -505,12 +504,7 @@ export default function App() {
         onClose={() => setIsModelViewerOpen(false)}
         activeModelType={params.modelType}
         onSelectModel={(modelType) => handleParamChange('modelType', modelType)}
-        onApplyToWindTunnel={(opts) => {
-          handleParamChange('modelType', opts.modelType);
-          if (opts.landingGear !== undefined) {
-            handleParamChange('landingGear', opts.landingGear);
-          }
-        }}
+        onApplyToWindTunnel={(modelType) => handleParamChange('modelType', modelType)}
       />
     </div>
   );

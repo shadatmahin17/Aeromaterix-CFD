@@ -1,6 +1,0 @@
-{
-  "summary":  "Implementation plan for correcting 3D model orientation alignment across all aircraft types and upgrading the CFD fluid dynamics simulation engine with authentic camber deflection, downwash, and wingtip vortices.",
-  "updatedAt":  "2026-10-10T17:47:17.097763673Z",
-  "requestFeedback":  true,
-  "userFacing":  true
-}

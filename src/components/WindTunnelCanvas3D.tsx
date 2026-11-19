@@ -1,7 +1,8 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { SimulationParams, AeroTelemetry } from '../types/aerodynamics';
 import { AIRCRAFT_MODELS } from '../utils/airfoilGenerators';
 import { getAircraft3DModel, computeFaceNormal, Vertex3D } from '../utils/aircraft3DGeometry';
+import { AircraftSurfaceField } from '../engine/AircraftSurfaceField';
 import { FluidDynamics3D, Fluid3DParams } from '../engine/FluidDynamics3D';
 import { windTunnelAudio } from '../utils/audio';
 import { 
@@ -94,16 +95,37 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
   // Active camera preset button
   const [activePreset, setActivePreset] = useState<'side' | 'iso' | 'top' | 'chase' | 'front'>('iso');
 
-  // Initialize Dynamic Flow Particles (Vibrant Aerodynamic Spectrum)
+  // Real Vertex Surface Field built from current procedural aircraft geometry
+  const surfaceField = useMemo(() => {
+    const baseMesh = getAircraft3DModel(params.modelType, params.flaps_deg, 0, 350, 0);
+    return AircraftSurfaceField.fromProceduralMesh(baseMesh);
+  }, [params.modelType, params.flaps_deg]);
+
+  // Initialize Dynamic Flow Particles seeded around wing & vortex tips
   useEffect(() => {
     const num = 850;
-    const vibrantColors = ['#00f0ff', '#38bdf8', '#0ea5e9', '#34d399', '#60a5fa', '#a7f3d0', '#fbbf24'];
+    const vibrantColors = ['#38bdf8', '#0ea5e9', '#34d399', '#60a5fa', '#a7f3d0', '#fbbf24'];
+    const halfSpan = surfaceField?.halfSpan ?? 5.5;
     const pArr: Particle3D[] = [];
     for (let i = 0; i < num; i++) {
+      const roll = Math.random();
+      let y = 0;
+      let z = 0;
+      if (roll < 0.45) {
+        y = -0.85 + Math.random() * 2.1;
+        z = -halfSpan * 0.95 + Math.random() * (halfSpan * 1.9);
+      } else if (roll < 0.78) {
+        const tipSign = Math.random() > 0.5 ? 1 : -1;
+        z = tipSign * (halfSpan * 0.94 + (Math.random() - 0.5) * 1.1);
+        y = -0.35 + Math.random() * 1.0;
+      } else {
+        y = -3.4 + Math.random() * 6.8;
+        z = -8.0 + Math.random() * 16.0;
+      }
       pArr.push({
         x: -20 + Math.random() * 40,
-        y: -5 + Math.random() * 10,
-        z: -7 + Math.random() * 14,
+        y,
+        z,
         vx: 0.35 + Math.random() * 0.22,
         vy: 0,
         vz: 0,
@@ -113,7 +135,7 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
       });
     }
     particlesRef.current = pArr;
-  }, []);
+  }, [surfaceField]);
 
   // Sync Audio with simulation speed & stall
   useEffect(() => {
@@ -239,8 +261,8 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
       [fNorm.x, fNorm.y, fNorm.z],
     ];
 
-    // 2. Clear Background (Chamber Deep Aerospace Navy Slate)
-    ctx.fillStyle = '#060a12';
+    // 2. Clear Background (--dark: #0D1114)
+    ctx.fillStyle = '#0D1114';
     ctx.fillRect(0, 0, width, height);
 
     // 3. Render Dynamic Wind Tunnel Coordinate Grid Floor (Vibrant Cyan & Indigo)
@@ -281,7 +303,7 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
       }
     }
 
-    // 4. Update and Render Dynamic 3D Flow Particles (PIV Velocity Streaks)
+    // 4. Update and Render Dynamic 3D Flow Particles (RK2 Vortex + Vertex Flow PIV Streaks)
     const fluid3DParams: Fluid3DParams = {
       modelType: params.modelType,
       aoaDeg: params.angle_of_attack,
@@ -289,78 +311,129 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
       mach: telemetry.mach,
       altitude_ft: params.altitude_ft,
       flapsDeg: params.flaps_deg,
+      viscosity: params.viscosity,
       isStalled: telemetry.isStalled,
       cl: telemetry.cl,
       cd: telemetry.cd,
       timeSec: now * 0.001,
+      surfaceField,
     };
 
-    if (params.show_particles && !isPaused) {
+    if (params.show_particles) {
       const pList = particlesRef.current;
-      const dtStep = 0.58;
+      const activeCount = Math.min(pList.length, Math.max(200, Math.round(pList.length * Math.min(1, params.smoke_density * 0.85))));
+      const dtStep = 0.28;
+      const halfSpan = surfaceField?.halfSpan ?? 5.5;
 
-      for (let i = 0; i < pList.length; i++) {
+      for (let i = 0; i < activeCount; i++) {
         const p = pList[i];
-
-        // Evaluate local 3D fluid dynamics velocity vector
-        const vel3D = FluidDynamics3D.getVelocity(p, fluid3DParams);
-
-        // Previous position for velocity streak drawing
         const prevPos = { x: p.x, y: p.y, z: p.z };
+        const v1 = FluidDynamics3D.getVelocity(p, fluid3DParams);
 
-        // 3D displacement
-        p.vx = vel3D.u;
-        p.vy = vel3D.v;
-        p.vz = vel3D.w;
+        if (!isPaused) {
+          // RK2 midpoint advection
+          const mid = {
+            x: p.x + v1.u * dtStep * 0.5,
+            y: p.y + v1.v * dtStep * 0.5,
+            z: p.z + v1.w * dtStep * 0.5,
+          };
+          const v2 = FluidDynamics3D.getVelocity(mid, fluid3DParams);
+          p.vx = v2.u;
+          p.vy = v2.v;
+          p.vz = v2.w;
 
-        p.x += p.vx * dtStep;
-        p.y += p.vy * dtStep;
-        p.z += p.vz * dtStep;
-        p.age += 1;
+          p.x += p.vx * dtStep;
+          p.y += p.vy * dtStep;
+          p.z += p.vz * dtStep;
+          p.age += 1;
 
-        // Recycle particles exiting boundaries
-        if (p.x > 18 || Math.abs(p.y) > 8 || Math.abs(p.z) > 13 || p.age > p.maxAge) {
-          p.x = -18;
-          p.y = -4 + Math.random() * 8;
-          p.z = -6 + Math.random() * 12;
-          p.age = 0;
+          if (p.x > 20 || Math.abs(p.y) > 8 || Math.abs(p.z) > 13 || p.age > p.maxAge) {
+            const roll = Math.random();
+            p.x = -20;
+            if (roll < 0.45) {
+              p.y = -0.85 + Math.random() * 2.1;
+              p.z = -halfSpan * 0.95 + Math.random() * (halfSpan * 1.9);
+            } else if (roll < 0.78) {
+              const tipSign = Math.random() > 0.5 ? 1 : -1;
+              p.z = tipSign * (halfSpan * 0.94 + (Math.random() - 0.5) * 1.1);
+              p.y = -0.35 + Math.random() * 1.0;
+            } else {
+              p.y = -3.4 + Math.random() * 6.8;
+              p.z = -8.0 + Math.random() * 16.0;
+            }
+            p.age = 0;
+          }
         }
 
         const head = project3Dto2D(p, camX, camY, camZ, viewMatrix, focalLength, cx, cy);
-        const tail = project3Dto2D(prevPos, camX, camY, camZ, viewMatrix, focalLength, cx, cy);
+        const tailPos = isPaused
+          ? { x: p.x - v1.u * dtStep * 0.9, y: p.y - v1.v * dtStep * 0.9, z: p.z - v1.w * dtStep * 0.9 }
+          : prevPos;
+        const tail = project3Dto2D(tailPos, camX, camY, camZ, viewMatrix, focalLength, cx, cy);
 
         if (head && tail) {
-          const alpha = Math.min(0.92, 1 - p.age / p.maxAge);
+          const alpha = Math.min(0.92, (1 - p.age / p.maxAge) * (0.55 + params.smoke_density * 0.3));
 
-          // Fluid dynamics color-coding:
-          // Separated stall wake = #ef4444
-          // Suction peak = #00f0ff
-          // Compression = #fbbf24
-          let strokeCol = p.color;
-          if (vel3D.isSeparated || (telemetry.isStalled && p.x > -1.0)) {
+          let strokeCol = '#34d399';
+          if (v1.isSeparated || (telemetry.isStalled && p.x > -1.0 && p.y > -0.2)) {
             strokeCol = '#ef4444';
-          } else if (vel3D.pressureCoeff < -0.6) {
-            strokeCol = '#00f0ff';
-          } else if (vel3D.pressureCoeff > 0.25) {
-            strokeCol = '#fbbf24';
+          } else if (v1.vorticity > 0.35) {
+            strokeCol = '#38bdf8';
+          } else if (v1.pressureCoeff < -0.5) {
+            strokeCol = '#0ea5e9';
+          } else if (v1.pressureCoeff > 0.22) {
+            strokeCol = '#f59e0b';
           }
 
           ctx.strokeStyle = strokeCol;
           ctx.globalAlpha = alpha;
-          ctx.lineWidth = Math.max(1.0, 22 / head.depth);
+          ctx.lineWidth = Math.max(1.0, 20 / head.depth);
           ctx.beginPath();
           ctx.moveTo(tail.x, tail.y);
           ctx.lineTo(head.x, head.y);
           ctx.stroke();
 
-          // Tracer head bead
           ctx.fillStyle = strokeCol;
           ctx.beginPath();
-          ctx.arc(head.x, head.y, Math.max(1.2, 18 / head.depth), 0, Math.PI * 2);
+          ctx.arc(head.x, head.y, Math.max(1.1, 15 / head.depth), 0, Math.PI * 2);
           ctx.fill();
         }
       }
       ctx.globalAlpha = 1.0;
+    }
+
+    // 4b. Vector Quiver Grid Overlay (when show_quiver is active)
+    if (params.show_quiver) {
+      ctx.save();
+      ctx.lineWidth = 1.3;
+      for (let qx = -8; qx <= 10; qx += 3.0) {
+        for (let qy = -1.6; qy <= 2.4; qy += 1.3) {
+          for (let qz = -4.5; qz <= 4.5; qz += 3.0) {
+            const vel = FluidDynamics3D.getVelocity({ x: qx, y: qy, z: qz }, fluid3DParams);
+            const s = vel.speed || 1;
+            const len = Math.min(1.5, 0.45 + s * 0.4);
+            const p0 = project3Dto2D({ x: qx, y: qy, z: qz }, camX, camY, camZ, viewMatrix, focalLength, cx, cy);
+            const p1 = project3Dto2D(
+              { x: qx + (vel.u / s) * len, y: qy + (vel.v / s) * len, z: qz + (vel.w / s) * len },
+              camX, camY, camZ, viewMatrix, focalLength, cx, cy
+            );
+            if (p0 && p1) {
+              ctx.strokeStyle = vel.isSeparated
+                ? 'rgba(239, 68, 68, 0.78)'
+                : vel.pressureCoeff < -0.5
+                ? 'rgba(56, 189, 248, 0.78)'
+                : vel.pressureCoeff > 0.2
+                ? 'rgba(245, 158, 11, 0.78)'
+                : 'rgba(52, 211, 153, 0.7)';
+              ctx.beginPath();
+              ctx.moveTo(p0.x, p0.y);
+              ctx.lineTo(p1.x, p1.y);
+              ctx.stroke();
+            }
+          }
+        }
+      }
+      ctx.restore();
     }
 
     // 5. Dynamic 3D Model Transformation & Aeroelastic Buffet Vibration
@@ -567,19 +640,16 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
       ctx.restore();
     }
 
-    // 8. Render Dynamic High-Density 3D Smoke Streamlines (Fluid Dynamics Rake)
+    // 8. Render Dynamic High-Density 3D Smoke Streamlines (Vortex + Vertex Flow Rake)
     if (params.show_streamlines) {
-      let halfSpan = 6.8;
-      if (params.modelType === 'airliner') halfSpan = 9.2;
-      else if (params.modelType === 'concorde') halfSpan = 4.8;
-      else if (params.modelType === 'naca2412' || params.modelType === 'naca0012') halfSpan = 7.0;
+      const halfSpan = surfaceField?.halfSpan ?? 5.5;
 
       const rakeZ = [
-        -halfSpan * 1.0, -halfSpan * 0.65, -halfSpan * 0.35,
-        -1.2, -0.4, 0.0, 0.4, 1.2,
-        halfSpan * 0.35, halfSpan * 0.65, halfSpan * 1.0
+        -halfSpan * 0.96, -halfSpan * 0.65, -halfSpan * 0.35,
+        -0.8, 0.0, 0.8,
+        halfSpan * 0.35, halfSpan * 0.65, halfSpan * 0.96,
       ];
-      const rakeY = [-0.85, -0.15, 0.55, 1.35];
+      const rakeY = [-0.65, -0.1, 0.45, 1.1];
 
       ctx.save();
       ctx.lineWidth = Math.max(1.2, 1.6 * params.smoke_density);
@@ -588,8 +658,8 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
         const z = rakeZ[rkIdx];
         for (let ryIdx = 0; ryIdx < rakeY.length; ryIdx++) {
           const y = rakeY[ryIdx];
-          const startPt = { x: -21, y, z };
-          const pts = FluidDynamics3D.traceStreamline(startPt, fluid3DParams, 65, 0.65);
+          const startPt = { x: -20, y, z };
+          const pts = FluidDynamics3D.traceStreamline(startPt, fluid3DParams, 130, 0.29);
 
           if (pts.length > 2) {
             ctx.beginPath();
@@ -607,86 +677,34 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
               }
             }
 
-            // Streamline color based on local fluid dynamics & stall
             const isSeparatedFilament = pts.some((pt) => pt.isSeparated);
+            const isVortexFilament = Math.abs(Math.abs(z) - halfSpan * 0.96) < 0.25 || pts.some((pt) => pt.vorticity > 0.35);
             if (isSeparatedFilament || (telemetry.isStalled && y > -0.2)) {
-              ctx.strokeStyle = 'rgba(239, 68, 68, 0.75)';
-            } else if (y >= 0.4) {
-              ctx.strokeStyle = 'rgba(56, 189, 248, 0.72)'; // Upper suction sky cyan
+              ctx.strokeStyle = 'rgba(239, 68, 68, 0.78)';
+            } else if (isVortexFilament) {
+              ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
+            } else if (y >= 0.35) {
+              ctx.strokeStyle = 'rgba(14, 165, 233, 0.72)';
             } else {
-              ctx.strokeStyle = 'rgba(52, 211, 153, 0.62)'; // Lower compression emerald
+              ctx.strokeStyle = 'rgba(52, 211, 153, 0.62)';
             }
             ctx.stroke();
 
             // Animated travelling smoke pulse node along each streamline
-            const pulsePhase = ((now * 0.06 * (params.airspeed_kts / 300) + rkIdx * 8 + ryIdx * 15) % 100) / 100;
+            const pulsePhase = ((now * 0.055 * (params.airspeed_kts / 300) + rkIdx * 9 + ryIdx * 17) % 100) / 100;
             const nodeIdx = Math.floor(pulsePhase * (pts.length - 1));
             const nodePt = pts[nodeIdx];
             if (nodePt) {
               const node2d = project3Dto2D(nodePt, camX, camY, camZ, viewMatrix, focalLength, cx, cy);
               if (node2d) {
-                ctx.fillStyle = isSeparatedFilament ? '#ef4444' : '#00f0ff';
+                ctx.fillStyle = isSeparatedFilament ? '#ef4444' : isVortexFilament ? '#7dd3fc' : '#38bdf8';
                 ctx.beginPath();
-                ctx.arc(node2d.x, node2d.y, Math.max(1.2, 16 / node2d.depth), 0, Math.PI * 2);
+                ctx.arc(node2d.x, node2d.y, Math.max(1.2, 15 / node2d.depth), 0, Math.PI * 2);
                 ctx.fill();
               }
             }
           }
         }
-      }
-      ctx.restore();
-    }
-
-    // 9. Dynamic 3D Wingtip Helical Vortices (Induced Drag Wake Visualization)
-    // Counter-rotating helical vortex spirals peeling off left and right wingtips
-    if (params.show_streamlines) {
-      let wingtipZ = 5.4;
-      let wingtipX = 1.4;
-      if (params.modelType === 'airliner') {
-        wingtipZ = 7.4;
-        wingtipX = 2.6;
-      } else if (params.modelType === 'concorde') {
-        wingtipZ = 5.0;
-        wingtipX = 3.6;
-      } else if (params.modelType === 'naca2412' || params.modelType === 'naca0012') {
-        wingtipZ = 4.3;
-        wingtipX = 1.2;
-      }
-
-      const vortexCirculation = Math.max(0.4, Math.abs(telemetry.cl) * 2.0);
-      const tipSigns = [-1, 1]; // Left and Right wingtips
-
-      ctx.save();
-      ctx.lineWidth = 2.0;
-
-      for (const sign of tipSigns) {
-        ctx.beginPath();
-        let started = false;
-        const vSteps = 42;
-
-        for (let i = 0; i <= vSteps; i++) {
-          const t = i / vSteps;
-          const px = wingtipX + t * 14;
-          const dist = px - wingtipX;
-          const radius = 0.18 + dist * 0.085;
-          const spin = sign * (dist * 1.8 - now * 0.008 * vortexCirculation);
-
-          const py = -Math.sin(pitchRad) * (dist * 0.09) + radius * Math.sin(spin);
-          const pz = sign * wingtipZ + radius * Math.cos(spin);
-
-          const p = project3Dto2D({ x: px, y: py, z: pz }, camX, camY, camZ, viewMatrix, focalLength, cx, cy);
-          if (p) {
-            if (!started) {
-              ctx.moveTo(p.x, p.y);
-              started = true;
-            } else {
-              ctx.lineTo(p.x, p.y);
-            }
-          }
-        }
-        // Glowing electric cyan/emerald spiral
-        ctx.strokeStyle = sign === 1 ? 'rgba(56, 189, 248, 0.85)' : 'rgba(52, 211, 153, 0.85)';
-        ctx.stroke();
       }
       ctx.restore();
     }
@@ -861,7 +879,7 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
 
     // Request next frame
     animFrameIdRef.current = requestAnimationFrame(render);
-  }, [params, telemetry, isPaused, isAutoOrbit, project3Dto2D]);
+  }, [params, telemetry, isPaused, isAutoOrbit, project3Dto2D, surfaceField]);
 
   // Start / restart render loop
   useEffect(() => {
@@ -939,7 +957,7 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
   };
 
   return (
-    <div className="relative w-full h-full min-h-[460px] rounded-2xl overflow-hidden border border-slate-800 bg-[#060a12] select-none shadow-2xl">
+    <div className="relative w-full h-full min-h-[460px] rounded-xl overflow-hidden border border-[var(--border)] bg-[#0D1114] select-none shadow-[var(--shadow-tech)]">
       {/* Real 3D Canvas */}
       <canvas
         ref={canvasRef}
@@ -951,26 +969,24 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
         className="w-full h-full block cursor-grab active:cursor-grabbing"
       />
 
-      {/* Top Left: 3D Aircraft Model Telemetry Badge (Vibrant Aerodynamic Styling) */}
-      <div className="absolute top-4 left-4 flex flex-col gap-2 pointer-events-none">
-        <div className="px-3.5 py-1.5 rounded-lg bg-slate-950/90 backdrop-blur-md border border-cyan-500/40 shadow-lg shadow-cyan-950/30 flex items-center gap-2.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse" />
-          <span className="text-xs font-semibold text-white font-sans tracking-wide">
-            {AIRCRAFT_MODELS[params.modelType].name} (Blender CAD 3D)
+      {/* Top Left: 3D Aircraft Model Telemetry Overlay */}
+      <div className="absolute top-3 left-3 flex flex-col gap-2 pointer-events-none">
+        <div className="px-3 py-1.5 rounded-lg bg-[#151A1E]/95 border border-slate-700/80 flex items-center gap-2 text-xs">
+          <span className="font-semibold text-slate-100 font-sans">
+            {AIRCRAFT_MODELS[params.modelType].name}
           </span>
-          <span className="text-slate-600">·</span>
-          <span className="text-xs text-cyan-300 font-mono font-bold">
-            α: {params.angle_of_attack >= 0 ? '+' : ''}{params.angle_of_attack.toFixed(1)}°
+          <span className="text-slate-500" aria-hidden="true">·</span>
+          <span className="text-sky-300 font-mono font-semibold tabular-nums">
+            α {params.angle_of_attack >= 0 ? '+' : ''}{params.angle_of_attack.toFixed(1)}°
           </span>
-          {params.show_heatmap && (
-            <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold">
-              CFD HEATMAP
-            </span>
-          )}
+          <span className="text-slate-500" aria-hidden="true">·</span>
+          <span className="text-slate-300 font-mono text-[11px]">
+            Biot-Savart + Vertex Flow
+          </span>
         </div>
 
         {telemetry.isStalled && (
-          <div className="px-3 py-1.5 rounded-lg bg-red-950/90 border border-red-500 shadow-lg shadow-red-950/60 flex items-center gap-1.5 animate-bounce">
+          <div className="px-3 py-1.5 rounded-lg bg-red-950/95 border border-red-500/70 flex items-center gap-1.5">
             <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
             <span className="text-xs font-bold text-red-100 uppercase tracking-wider font-mono">
               STALL DETECTED
@@ -979,17 +995,17 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
         )}
 
         {telemetry.mach >= 1.0 && (
-          <div className="px-3 py-1.5 rounded-lg bg-amber-950/90 border border-amber-500 shadow-lg flex items-center gap-1.5 animate-pulse">
+          <div className="px-3 py-1.5 rounded-lg bg-[#151A1E]/95 border border-amber-500/60 flex items-center gap-1.5">
             <Zap className="w-3.5 h-3.5 text-amber-400" />
-            <span className="text-xs font-bold text-amber-200 font-mono">
+            <span className="text-xs font-bold text-amber-200 font-mono tabular-nums">
               MACH {telemetry.mach.toFixed(2)} SHOCK CONE
             </span>
           </div>
         )}
 
         {params.airspeed_kts >= 480 && (
-          <div className="px-3 py-1.5 rounded-lg bg-orange-950/90 border border-orange-500/80 shadow-lg flex items-center gap-1.5">
-            <Flame className="w-3.5 h-3.5 text-orange-400 animate-bounce" />
+          <div className="px-3 py-1.5 rounded-lg bg-[#151A1E]/95 border border-orange-500/60 flex items-center gap-1.5">
+            <Flame className="w-3.5 h-3.5 text-orange-400" />
             <span className="text-xs font-bold text-orange-200 font-mono">
               AFTERBURNER ACTIVE
             </span>
@@ -998,34 +1014,34 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
       </div>
 
       {/* Top Right: Camera Presets & Dynamic Features */}
-      <div className="absolute top-4 right-4 flex items-center gap-2">
+      <div className="absolute top-3 right-3 flex items-center gap-1.5">
         {onOpenWebGL && (
           <button
             onClick={onOpenWebGL}
-            className="px-3 py-1.5 rounded-lg bg-cyan-950/90 hover:bg-cyan-900/90 border border-cyan-400/50 text-cyan-200 text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-cyan-950/60"
-            title="Switch to Photorealistic WebGL 3D GLB Engine"
+            className="px-3 py-1.5 rounded-lg bg-[#1769AA] hover:bg-[#1e7bc4] text-white text-xs font-semibold transition-colors flex items-center gap-1.5"
+            title="Switch to Hardware WebGL 3D Engine"
           >
-            <Box className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-            <span className="hidden sm:inline">WebGL 3D GLB</span>
+            <Box className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">WebGL 3D</span>
           </button>
         )}
 
         {onOpenModelInspector && (
           <button
             onClick={onOpenModelInspector}
-            className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-semibold transition-all flex items-center gap-1.5"
+            className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg bg-[#151A1E]/95 hover:bg-slate-800 border border-slate-700/80 text-slate-200 hover:text-white text-xs font-semibold transition-colors flex items-center gap-1.5"
             title="Inspect 3D CAD Asset"
           >
-            <Box className="w-3.5 h-3.5 text-cyan-400" />
+            <Box className="w-3.5 h-3.5 text-sky-400" />
             <span className="hidden md:inline">Inspect CAD</span>
           </button>
         )}
 
-        <div className="hidden sm:flex items-center gap-1 p-1 rounded-lg bg-slate-950/85 backdrop-blur-md border border-slate-800">
+        <div className="hidden sm:flex items-center gap-1 p-1 rounded-lg bg-[#151A1E]/95 border border-slate-700/80">
           <button
             onClick={() => setCameraPreset('side')}
             className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
-              activePreset === 'side' ? 'bg-cyan-500/20 text-cyan-300 font-semibold' : 'text-slate-400 hover:text-slate-200'
+              activePreset === 'side' ? 'bg-[#1769AA] text-white' : 'text-slate-300 hover:text-white'
             }`}
           >
             Profile
@@ -1033,7 +1049,7 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
           <button
             onClick={() => setCameraPreset('iso')}
             className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
-              activePreset === 'iso' ? 'bg-cyan-500/20 text-cyan-300 font-semibold' : 'text-slate-400 hover:text-slate-200'
+              activePreset === 'iso' ? 'bg-[#1769AA] text-white' : 'text-slate-300 hover:text-white'
             }`}
           >
             Isometric
@@ -1041,7 +1057,7 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
           <button
             onClick={() => setCameraPreset('top')}
             className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
-              activePreset === 'top' ? 'bg-cyan-500/20 text-cyan-300 font-semibold' : 'text-slate-400 hover:text-slate-200'
+              activePreset === 'top' ? 'bg-[#1769AA] text-white' : 'text-slate-300 hover:text-white'
             }`}
           >
             Planform
@@ -1049,22 +1065,22 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
           <button
             onClick={() => setCameraPreset('chase')}
             className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
-              activePreset === 'chase' ? 'bg-cyan-500/20 text-cyan-300 font-semibold' : 'text-slate-400 hover:text-slate-200'
+              activePreset === 'chase' ? 'bg-[#1769AA] text-white' : 'text-slate-300 hover:text-white'
             }`}
           >
             Chase
           </button>
         </div>
 
-        {/* 360 Cinematic Orbit Toggle */}
+        {/* 360 Orbit Toggle */}
         <button
           onClick={() => setIsAutoOrbit((prev) => !prev)}
-          className={`p-2 rounded-lg backdrop-blur-md border transition-all ${
+          className={`p-2 rounded-lg border transition-colors ${
             isAutoOrbit
-              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-sm animate-pulse'
-              : 'bg-slate-900/90 text-slate-400 border-slate-800 hover:text-slate-200'
+              ? 'bg-[#1769AA] text-white border-[#1769AA]'
+              : 'bg-[#151A1E]/95 text-slate-300 border-slate-700/80 hover:text-white'
           }`}
-          title={isAutoOrbit ? 'Stop 360° Cinematic Orbit' : 'Start 360° Cinematic Orbit'}
+          title={isAutoOrbit ? 'Stop 360° Orbit' : 'Start 360° Orbit'}
         >
           <Compass className="w-4 h-4" />
         </button>
@@ -1072,12 +1088,12 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
         {/* Force Vectors Toggle */}
         <button
           onClick={() => onParamChange('show_pressure_vectors', !params.show_pressure_vectors)}
-          className={`p-2 rounded-lg backdrop-blur-md border transition-all ${
+          className={`p-2 rounded-lg border transition-colors ${
             params.show_pressure_vectors
-              ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-sm'
-              : 'bg-slate-900/90 text-slate-400 border-slate-800 hover:text-slate-200'
+              ? 'bg-[#1769AA] text-white border-[#1769AA]'
+              : 'bg-[#151A1E]/95 text-slate-300 border-slate-700/80 hover:text-white'
           }`}
-          title={params.show_pressure_vectors ? 'Hide 3D Force Vectors (Lift & Drag)' : 'Show 3D Force Vectors (Lift & Drag)'}
+          title={params.show_pressure_vectors ? 'Hide 3D Force Vectors' : 'Show 3D Force Vectors'}
         >
           <ArrowUpRight className="w-4 h-4" />
         </button>
@@ -1085,10 +1101,10 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
         {/* Audio Toggle */}
         <button
           onClick={() => onParamChange('audio_enabled', !params.audio_enabled)}
-          className={`p-2 rounded-lg backdrop-blur-md border transition-all ${
+          className={`p-2 rounded-lg border transition-colors ${
             params.audio_enabled
-              ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-sm'
-              : 'bg-slate-900/90 text-slate-400 border-slate-800 hover:text-slate-200'
+              ? 'bg-[#1769AA] text-white border-[#1769AA]'
+              : 'bg-[#151A1E]/95 text-slate-300 border-slate-700/80 hover:text-white'
           }`}
           title={params.audio_enabled ? 'Mute Wind Tunnel Audio' : 'Enable Wind Tunnel Audio'}
         >
@@ -1098,43 +1114,43 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
         {/* Reset Camera */}
         <button
           onClick={() => setCameraPreset('iso')}
-          className="p-2 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors shadow-sm"
+          className="p-2 rounded-lg bg-[#151A1E]/95 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 transition-colors"
           title="Reset Camera"
         >
           <RotateCw className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Bottom Floating Legend / Help Overlay (Vibrant Aerodynamic Styling) */}
-      <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between pointer-events-none text-xs text-slate-400">
-        <div className="flex flex-wrap items-center gap-2.5 bg-slate-950/90 backdrop-blur-md px-3.5 py-1.5 rounded-lg border border-slate-800 shadow-lg">
-          <span className="text-slate-200 font-medium">3D Wind Tunnel</span>
-          <span className="text-slate-600">·</span>
-          <span className="text-cyan-400">Drag to Orbit 360°</span>
-          <span className="text-slate-600">·</span>
-          <span className="text-amber-400">Shift+Drag to Pitch AoA</span>
-          <span className="text-slate-600">·</span>
-          <div className="flex items-center gap-2 pl-1 border-l border-slate-800">
-            <span className="w-2 h-2 rounded-full bg-cyan-400" title="Bernoulli Suction" />
-            <span className="text-[11px] text-cyan-300 font-mono">Suction</span>
-            <span className="w-2 h-2 rounded-full bg-amber-400 ml-1" title="Dynamic Compression" />
+      {/* Bottom Floating Legend / Help Overlay */}
+      <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between pointer-events-none text-xs text-slate-300">
+        <div className="flex flex-wrap items-center gap-2.5 bg-[#151A1E]/95 px-3 py-1.5 rounded-lg border border-slate-700/80">
+          <span className="text-slate-100 font-medium">Canvas 3D</span>
+          <span className="text-slate-500" aria-hidden="true">·</span>
+          <span className="text-sky-300">Drag to Orbit</span>
+          <span className="text-slate-500" aria-hidden="true">·</span>
+          <span className="text-amber-300">Shift+Drag to Pitch AoA</span>
+          <span className="text-slate-500" aria-hidden="true">·</span>
+          <div className="flex items-center gap-2 pl-1 border-l border-slate-700/80">
+            <span className="w-2 h-2 rounded-full bg-sky-400" />
+            <span className="text-[11px] text-sky-300 font-mono">Suction</span>
+            <span className="w-2 h-2 rounded-full bg-amber-400 ml-1" />
             <span className="text-[11px] text-amber-300 font-mono">Compression</span>
             {params.show_pressure_vectors && (
               <>
-                <span className="w-2 h-2 rounded-full bg-emerald-400 ml-1" title="Lift Vector" />
+                <span className="w-2 h-2 rounded-full bg-emerald-400 ml-1" />
                 <span className="text-[11px] text-emerald-300 font-mono">Lift</span>
-                <span className="w-2 h-2 rounded-full bg-amber-500 ml-1" title="Drag Vector" />
+                <span className="w-2 h-2 rounded-full bg-amber-500 ml-1" />
                 <span className="text-[11px] text-amber-400 font-mono">Drag</span>
               </>
             )}
           </div>
         </div>
 
-        <div className="hidden sm:flex items-center gap-2 bg-slate-950/90 backdrop-blur-md px-3.5 py-1.5 rounded-lg border border-slate-800 shadow-lg">
+        <div className="hidden sm:flex items-center gap-2 bg-[#151A1E]/95 px-3 py-1.5 rounded-lg border border-slate-700/80 font-mono tabular-nums">
           <Activity className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="text-emerald-400 font-mono font-semibold">L/D: {telemetry.ldRatio.toFixed(1)}:1</span>
-          <span className="text-slate-600">·</span>
-          <span className="text-cyan-300 font-mono">q: {(telemetry.dynamic_pressure_pa / 1000).toFixed(1)} kPa</span>
+          <span className="text-emerald-300 font-semibold">L/D: {telemetry.ldRatio.toFixed(1)}:1</span>
+          <span className="text-slate-500" aria-hidden="true">·</span>
+          <span className="text-sky-300">q: {(telemetry.dynamic_pressure_pa / 1000).toFixed(1)} kPa</span>
         </div>
       </div>
     </div>

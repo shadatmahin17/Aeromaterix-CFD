@@ -136,24 +136,24 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
 
   return (
     <div className="w-full flex flex-col gap-3.5">
-      {/* 1. Aircraft Model Selection (Antigravity Spatial Selection) */}
+      {/* 1. Aircraft Model Selection */}
       <div className="antigravity-glass p-4 rounded-xl flex flex-col gap-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg bg-cyan-950/70 border border-cyan-500/50 flex items-center justify-center text-cyan-400">
+            <div className="w-6 h-6 rounded-lg bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA]">
               <Plane className="w-3.5 h-3.5" />
             </div>
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-100 font-sans">
+            <span className="text-xs font-bold uppercase tracking-wider text-[#161A1D] font-sans">
               Model Selection
             </span>
           </div>
-          <span className="text-[11px] text-slate-300 bg-slate-900/80 px-2 py-0.5 rounded-lg border border-white/5">
-            <strong className="text-cyan-300 font-mono">{currentModel.name}</strong>
+          <span className="text-[11px] font-mono text-[#1769AA] font-semibold truncate">
+            {currentModel.name.split(' (')[0]}
           </span>
         </div>
 
         {/* Aircraft Model Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2 perspective-1000">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2">
           {(Object.keys(AIRCRAFT_MODELS) as AircraftModelType[]).map((type) => {
             const config = AIRCRAFT_MODELS[type];
             const isSelected = params.modelType === type;
@@ -166,29 +166,22 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
                 }}
                 className={`antigravity-card p-2.5 rounded-xl text-left flex flex-col justify-between transition-all ${
                   isSelected
-                    ? '!bg-cyan-950/70 !border-cyan-400/80 shadow-[0_0_20px_rgba(56,189,248,0.35)] text-white scale-[1.02]'
-                    : 'text-slate-300'
+                    ? '!bg-[var(--accent-light)] !border-[#1769AA] ring-1 ring-[#1769AA]/20'
+                    : 'text-[#161A1D]'
                 }`}
               >
                 <div className="flex items-center justify-between w-full mb-1">
-                  <div className="flex items-center gap-1">
-                    <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-bold ${
-                      isSelected ? 'bg-cyan-500/30 text-cyan-200 border border-cyan-400/40' : 'bg-slate-800/80 text-slate-400'
-                    }`}>
-                      {config.category}
-                    </span>
-                    {config.hasGlbModel && (
-                      <span className="text-[9px] font-mono px-1 py-0.2 rounded font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 animate-pulse">
-                        GLB
-                      </span>
-                    )}
-                  </div>
-                  {isSelected && <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_#38bdf8]" />}
+                  <span className={`text-[10px] font-mono font-semibold ${
+                    isSelected ? 'text-[#1769AA]' : 'text-[#5C6670]'
+                  }`}>
+                    {config.category}{config.hasGlbModel ? ' · GLB' : ''}
+                  </span>
+                  {isSelected && <Check className="w-3.5 h-3.5 text-[#1769AA]" />}
                 </div>
-                <span className={`text-xs font-bold leading-tight ${isSelected ? 'text-cyan-100' : 'text-slate-200'}`}>
+                <span className={`text-xs font-bold leading-tight ${isSelected ? 'text-[#1769AA]' : 'text-[#161A1D]'}`}>
                   {config.name.split(' (')[0]}
                 </span>
-                <span className="text-[10px] text-slate-400 truncate mt-0.5">
+                <span className="text-[10px] text-[#5C6670] font-mono tabular-nums truncate mt-0.5">
                   Stall: {config.stallAngle > 0 ? `${config.stallAngle}°` : 'N/A'}
                 </span>
               </button>
@@ -198,88 +191,85 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
 
         {/* 3D GLB Asset Action & Controls Banner */}
         {currentModel.hasGlbModel && (
-          <div className="p-3.5 rounded-xl bg-gradient-to-r from-cyan-950/50 via-slate-900/60 to-emerald-950/40 border border-cyan-500/30 flex flex-wrap items-center justify-between gap-3 shadow-inner">
+          <div className="p-3 rounded-xl bg-[var(--bg)] border border-[var(--border)] flex flex-wrap items-center justify-between gap-2.5">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.3)]">
-                <Box className="w-4 h-4 animate-pulse" />
+              <div className="w-8 h-8 rounded-lg bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA]">
+                <Box className="w-4 h-4" />
               </div>
               <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-white">
-                    3D GLB CAD Model Active
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-[#161A1D]">
+                    3D GLB Mesh Active
                   </span>
-                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                  <span className="text-[10px] font-mono text-[#1769AA] font-semibold">
                     {params.modelType === 'airliner'
-                      ? '11.0 MB CAD'
+                      ? '11.0 MB'
                       : params.modelType === 'concorde'
-                      ? '5.8 MB PBR'
+                      ? '5.8 MB'
                       : params.modelType === 'naca2412'
-                      ? '11.4 KB Mesh'
-                      : '26.5 MB PBR'}
+                      ? '11.4 KB'
+                      : '26.5 MB'}
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-400">
-                  Surface pressure heatmap, streamlines &amp; force vectors
+                <p className="text-[11px] text-[#5C6670]">
+                  Vertex normal field &amp; Cp surface mapping
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              {/* Landing Gear Quick Toggle (for aircraft models) */}
               {(params.modelType === 'f22' || params.modelType === 'airliner' || params.modelType === 'concorde') && (
                 <button
                   onClick={() => onParamChange('landingGear', !params.landingGear)}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
                     params.landingGear
-                      ? 'bg-amber-500/20 text-amber-200 border-amber-400/40'
-                      : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:text-white'
+                      ? 'bg-[var(--accent-light)] text-[#1769AA] border-[#1769AA]/40'
+                      : 'bg-[var(--surface)] text-[#5C6670] border-[var(--border)] hover:text-[#161A1D]'
                   }`}
                   title="Toggle landing gear configuration"
                 >
-                  {params.landingGear ? '🛬 Gear: Deployed' : '🛫 Gear: Retracted'}
+                  {params.landingGear ? 'Gear: Down' : 'Gear: Up'}
                 </button>
               )}
 
-              {/* Inspect 3D CAD Model Button */}
               {onOpenModelInspector && (
                 <button
                   onClick={onOpenModelInspector}
-                  className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500 to-sky-400 text-slate-950 font-bold text-xs shadow-[0_0_14px_rgba(6,182,212,0.4)] hover:brightness-110 transition-all flex items-center gap-1.5"
+                  className="px-3 py-1.5 rounded-lg bg-[#1769AA] hover:bg-[#145a92] text-white font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-sm"
                 >
                   <Box className="w-3.5 h-3.5" />
-                  <span>Inspect 3D CAD</span>
+                  <span>Inspect CAD</span>
                 </button>
               )}
             </div>
           </div>
         )}
 
-        <p className="text-xs text-slate-400 leading-relaxed italic border-t border-cyan-500/15 pt-2.5">
+        <p className="text-xs text-[#5C6670] leading-relaxed border-t border-[var(--border)] pt-2.5">
           {currentModel.description}
         </p>
       </div>
 
-      {/* 2. Interactive Primary Flight Sliders (Antigravity Spatial Sliders) */}
-      <div className="flex flex-col gap-3.5 perspective-1000">
+      {/* 2. Interactive Primary Flight Sliders */}
+      <div className="flex flex-col gap-3.5">
         {/* Attitude & Control Surfaces */}
         <div className="antigravity-glass p-4 rounded-xl flex flex-col gap-3">
-          <div className="flex items-center justify-between text-slate-200">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-lg bg-cyan-950/70 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+              <div className="w-6 h-6 rounded-lg bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA]">
                 <Compass className="w-3.5 h-3.5" />
               </div>
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-100 font-sans">
+              <span className="text-xs font-bold uppercase tracking-wider text-[#161A1D] font-sans">
                 Attitude &amp; Flaps
               </span>
             </div>
 
-            {/* Dynamic Auto Sweep Toggle */}
             <button
               onClick={() => setIsAutoSweeping((prev) => !prev)}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition-all ${
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition-colors border ${
                 isAutoSweeping
-                  ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/70 shadow-[0_0_12px_rgba(52,211,153,0.35)] animate-pulse'
-                  : 'bg-slate-900/80 text-slate-400 hover:text-slate-200 border border-white/10 hover:border-cyan-500/40'
+                  ? 'bg-[#1769AA] text-white border-[#1769AA]'
+                  : 'bg-[var(--bg)] text-[#5C6670] hover:text-[#161A1D] border-[var(--border)]'
               }`}
               title="Continuously sweep Angle of Attack dynamically"
             >
@@ -291,8 +281,8 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
           {/* Angle of Attack (AoA) */}
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between text-xs">
-              <label htmlFor="aoa-slider" className="text-slate-200 font-semibold">Angle of Attack (α)</label>
-              <span className="font-mono text-cyan-300 font-bold px-2 py-0.5 rounded bg-cyan-950/70 border border-cyan-500/30">
+              <label htmlFor="aoa-slider" className="text-[#161A1D] font-semibold">Angle of Attack (α)</label>
+              <span className="font-mono tabular-nums text-[#1769AA] font-bold px-2 py-0.5 rounded bg-[var(--accent-light)]">
                 {params.angle_of_attack >= 0 ? '+' : ''}{params.angle_of_attack.toFixed(1)}°
               </span>
             </div>
@@ -307,10 +297,9 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
                 setIsAutoSweeping(false);
                 onParamChange('angle_of_attack', parseFloat(e.target.value));
               }}
-              className="w-full accent-cyan-400 cursor-pointer h-2 bg-slate-800 rounded-lg"
+              className="w-full accent-[#1769AA] cursor-pointer h-2 bg-[#E4E9ED] rounded-lg"
             />
-            {/* Quick AoA shortcuts */}
-            <div className="grid grid-cols-6 gap-1 text-[11px] text-slate-400 mt-0.5">
+            <div className="grid grid-cols-6 gap-1 text-[11px] text-[#5C6670] mt-0.5 font-mono tabular-nums">
               {[-10, 0, 5, 12, 18, 25].map((val) => (
                 <button
                   key={val}
@@ -318,10 +307,10 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
                     setIsAutoSweeping(false);
                     onParamChange('angle_of_attack', val);
                   }}
-                  className={`py-0.5 rounded text-center border transition-all ${
+                  className={`py-0.5 rounded text-center border transition-colors ${
                     Math.abs(params.angle_of_attack - val) < 0.6
-                      ? 'bg-cyan-500/25 text-cyan-300 border-cyan-400/60 font-semibold shadow-sm'
-                      : 'border-transparent hover:text-slate-200 hover:bg-slate-800'
+                      ? 'bg-[var(--accent-light)] text-[#1769AA] border-[#1769AA]/40 font-semibold'
+                      : 'border-transparent hover:text-[#161A1D] hover:bg-[var(--bg)]'
                   }`}
                 >
                   {val >= 0 ? `+${val}°` : `${val}°`}
@@ -331,12 +320,12 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
           </div>
 
           {/* Trailing Edge Flaps */}
-          <div className="flex flex-col gap-1.5 pt-2 border-t border-white/5">
+          <div className="flex flex-col gap-1.5 pt-2.5 border-t border-[var(--border)]">
             <div className="flex items-center justify-between text-xs">
-              <label htmlFor="flaps-slider" className="text-slate-200 font-semibold">
+              <label htmlFor="flaps-slider" className="text-[#161A1D] font-semibold">
                 Trailing Flap (δf)
               </label>
-              <span className="font-mono text-amber-300 font-bold px-2 py-0.5 rounded bg-amber-950/60 border border-amber-500/30">
+              <span className="font-mono tabular-nums text-[#1769AA] font-bold px-2 py-0.5 rounded bg-[var(--accent-light)]">
                 {params.flaps_deg}° {params.flaps_deg > 0 ? '(High-Lift)' : '(Clean)'}
               </span>
             </div>
@@ -350,11 +339,11 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
               value={params.flaps_deg}
               onChange={(e) => onParamChange('flaps_deg', parseInt(e.target.value, 10))}
               className={`w-full h-2 rounded-lg ${
-                currentModel.flapCapable ? 'accent-amber-400 cursor-pointer bg-slate-800' : 'opacity-40 cursor-not-allowed bg-slate-800'
+                currentModel.flapCapable ? 'accent-[#1769AA] cursor-pointer bg-[#E4E9ED]' : 'opacity-40 cursor-not-allowed bg-[#E4E9ED]'
               }`}
             />
             {!currentModel.flapCapable && (
-              <span className="text-[10px] text-slate-500 italic">
+              <span className="text-[10px] text-[#5C6670]">
                 Flap deflection not available for this geometry
               </span>
             )}
@@ -363,11 +352,11 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
 
         {/* Atmospheric Flight Envelope */}
         <div className="antigravity-glass p-4 rounded-xl flex flex-col gap-3">
-          <div className="flex items-center gap-2 text-slate-200">
-            <div className="w-6 h-6 rounded-lg bg-cyan-950/70 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA]">
               <Wind className="w-3.5 h-3.5" />
             </div>
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-100 font-sans">
+            <span className="text-xs font-bold uppercase tracking-wider text-[#161A1D] font-sans">
               Atmospheric Envelope
             </span>
           </div>
@@ -375,8 +364,8 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
           {/* Inflow Airspeed */}
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between text-xs">
-              <label htmlFor="airspeed-slider" className="text-slate-200 font-semibold">Inflow Airspeed</label>
-              <span className="font-mono text-cyan-300 font-bold px-2 py-0.5 rounded bg-cyan-950/70 border border-cyan-500/30">
+              <label htmlFor="airspeed-slider" className="text-[#161A1D] font-semibold">Inflow Airspeed</label>
+              <span className="font-mono tabular-nums text-[#1769AA] font-bold px-2 py-0.5 rounded bg-[var(--accent-light)]">
                 {params.airspeed_kts} kts
               </span>
             </div>
@@ -388,20 +377,20 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
               step="10"
               value={params.airspeed_kts}
               onChange={(e) => onParamChange('airspeed_kts', parseInt(e.target.value, 10))}
-              className="w-full accent-cyan-400 cursor-pointer h-2 bg-slate-800 rounded-lg"
+              className="w-full accent-[#1769AA] cursor-pointer h-2 bg-[#E4E9ED] rounded-lg"
             />
-            <div className="flex items-center justify-between text-[10px] text-slate-500">
-              <span>App (120 kts)</span>
-              <span>Subsonic (450)</span>
-              <span>M 1+ (700+)</span>
+            <div className="flex items-center justify-between text-[10px] text-[#5C6670] font-mono">
+              <span>120 kts</span>
+              <span>450 kts</span>
+              <span>700+ kts</span>
             </div>
           </div>
 
           {/* Altitude */}
-          <div className="flex flex-col gap-1.5 pt-2 border-t border-white/5">
+          <div className="flex flex-col gap-1.5 pt-2.5 border-t border-[var(--border)]">
             <div className="flex items-center justify-between text-xs">
-              <label htmlFor="altitude-slider" className="text-slate-200 font-semibold">Test Altitude (ISA)</label>
-              <span className="font-mono text-cyan-300 font-bold px-2 py-0.5 rounded bg-cyan-950/70 border border-cyan-500/30">
+              <label htmlFor="altitude-slider" className="text-[#161A1D] font-semibold">Test Altitude (ISA)</label>
+              <span className="font-mono tabular-nums text-[#1769AA] font-bold px-2 py-0.5 rounded bg-[var(--accent-light)]">
                 {params.altitude_ft.toLocaleString()} ft
               </span>
             </div>
@@ -413,12 +402,12 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
               step="1000"
               value={params.altitude_ft}
               onChange={(e) => onParamChange('altitude_ft', parseInt(e.target.value, 10))}
-              className="w-full accent-cyan-400 cursor-pointer h-2 bg-slate-800 rounded-lg"
+              className="w-full accent-[#1769AA] cursor-pointer h-2 bg-[#E4E9ED] rounded-lg"
             />
-            <div className="flex items-center justify-between text-[10px] text-slate-500">
-              <span>Sea Level (1.225)</span>
-              <span>FL350 Cruise</span>
-              <span>FL480</span>
+            <div className="flex items-center justify-between text-[10px] text-[#5C6670] font-mono">
+              <span>Sea Level</span>
+              <span>FL350</span>
+              <span>FL500</span>
             </div>
           </div>
         </div>
@@ -428,22 +417,21 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
       <div className="antigravity-glass p-4 rounded-xl flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg bg-cyan-950/70 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+            <div className="w-6 h-6 rounded-lg bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA]">
               <Layers className="w-3.5 h-3.5" />
             </div>
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-100 font-sans">
-              Flow Physics Overlays
+            <span className="text-xs font-bold uppercase tracking-wider text-[#161A1D] font-sans">
+              Flow Overlays
             </span>
           </div>
 
-          {/* Play / Pause & Reset */}
           <div className="flex items-center gap-1.5">
             <button
               onClick={onTogglePause}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all shadow-sm ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors border ${
                 isPaused
-                  ? 'bg-amber-500 text-slate-950 hover:bg-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.4)]'
-                  : 'bg-slate-900/90 text-slate-200 hover:text-white border border-white/10 hover:border-cyan-500/40'
+                  ? 'bg-[#1769AA] text-white border-[#1769AA]'
+                  : 'bg-[var(--bg)] text-[#161A1D] border-[var(--border)] hover:border-[#1769AA]'
               }`}
             >
               {isPaused ? <Play className="w-3 h-3 fill-current" /> : <Pause className="w-3 h-3" />}
@@ -451,7 +439,7 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
             </button>
             <button
               onClick={onReset}
-              className="p-1 rounded-lg bg-slate-900/90 text-slate-300 hover:text-white border border-white/10 hover:border-cyan-500/40 transition-colors"
+              className="p-1.5 rounded-lg bg-[var(--bg)] text-[#5C6670] hover:text-[#161A1D] border border-[var(--border)] hover:border-[#1769AA] transition-colors"
               title="Reset Simulation"
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -460,14 +448,14 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
         </div>
 
         {/* Toggle switches */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-2 perspective-1000">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-2">
           {[
-            { key: 'show_streamlines', label: 'Smoke Lines', desc: 'Vapor ribbons' },
-            { key: 'show_heatmap', label: 'CFD Heatmap', desc: 'Speed gradient' },
+            { key: 'show_streamlines', label: 'Smoke Lines', desc: 'Vortex ribbons' },
+            { key: 'show_heatmap', label: 'CFD Heatmap', desc: 'Cp pressure' },
             { key: 'show_pressure_vectors', label: 'Force Vectors', desc: 'Lift & Drag 3D' },
-            { key: 'show_particles', label: 'PIV Particles', desc: 'Flow streaks' },
-            { key: 'show_quiver', label: 'Vector Quiver', desc: 'Direction arrows' },
-            { key: 'show_shockwaves', label: 'Mach Shockwave', desc: 'Supersonic cone' },
+            { key: 'show_particles', label: 'PIV Particles', desc: 'RK2 streaks' },
+            { key: 'show_quiver', label: 'Vector Quiver', desc: 'Velocity grid' },
+            { key: 'show_shockwaves', label: 'Mach Cone', desc: 'Shockwave' },
           ].map((item) => {
             const active = params[item.key as keyof SimulationParams] as boolean;
             return (
@@ -478,30 +466,30 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
                 }
                 className={`antigravity-card p-2 rounded-xl text-left flex flex-col justify-between transition-all ${
                   active
-                    ? '!bg-cyan-950/60 !border-cyan-400/80 text-slate-100 shadow-[0_0_16px_rgba(56,189,248,0.25)]'
-                    : 'text-slate-400'
+                    ? '!bg-[var(--accent-light)] !border-[#1769AA] text-[#1769AA]'
+                    : 'text-[#5C6670]'
                 }`}
               >
                 <div className="flex items-center justify-between w-full">
-                  <span className="text-[11px] font-bold text-slate-200">{item.label}</span>
+                  <span className={`text-[11px] font-bold ${active ? 'text-[#1769AA]' : 'text-[#161A1D]'}`}>{item.label}</span>
                   <div
-                    className={`w-2.5 h-2.5 rounded-full border transition-all ${
-                      active ? 'bg-cyan-400 border-cyan-400 shadow-[0_0_8px_#38bdf8]' : 'border-slate-600 bg-slate-900'
+                    className={`w-2 h-2 rounded-full transition-colors ${
+                      active ? 'bg-[#1769AA]' : 'bg-[#D9DEE2]'
                     }`}
                   />
                 </div>
-                <span className="text-[9px] text-slate-500 mt-0.5">{item.desc}</span>
+                <span className="text-[10px] text-[#5C6670] mt-0.5">{item.desc}</span>
               </button>
             );
           })}
         </div>
 
         {/* Smoke density & viscosity sliders */}
-        <div className="flex flex-col gap-2.5 pt-2.5 border-t border-white/5">
+        <div className="flex flex-col gap-2.5 pt-2.5 border-t border-[var(--border)]">
           <div className="flex flex-col gap-1">
             <div className="flex items-center justify-between text-xs">
-              <label htmlFor="viscosity-slider" className="text-slate-300 font-medium">Kinematic Viscosity (ν)</label>
-              <span className="font-mono text-cyan-300 font-bold text-xs">{params.viscosity.toFixed(2)}</span>
+              <label htmlFor="viscosity-slider" className="text-[#161A1D] font-medium">Kinematic Viscosity (ν)</label>
+              <span className="font-mono tabular-nums text-[#1769AA] font-bold text-xs">{params.viscosity.toFixed(2)}</span>
             </div>
             <input
               id="viscosity-slider"
@@ -511,14 +499,14 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
               step="0.01"
               value={params.viscosity}
               onChange={(e) => onParamChange('viscosity', parseFloat(e.target.value))}
-              className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+              className="w-full accent-[#1769AA] cursor-pointer h-1.5 bg-[#E4E9ED] rounded-lg"
             />
           </div>
 
           <div className="flex flex-col gap-1">
             <div className="flex items-center justify-between text-xs">
-              <label htmlFor="smoke-slider" className="text-slate-300 font-medium">Smoke Density</label>
-              <span className="font-mono text-cyan-300 font-bold text-xs">{params.smoke_density.toFixed(1)}x</span>
+              <label htmlFor="smoke-slider" className="text-[#161A1D] font-medium">Smoke Density</label>
+              <span className="font-mono tabular-nums text-[#1769AA] font-bold text-xs">{params.smoke_density.toFixed(1)}x</span>
             </div>
             <input
               id="smoke-slider"
@@ -528,7 +516,7 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
               step="0.1"
               value={params.smoke_density}
               onChange={(e) => onParamChange('smoke_density', parseFloat(e.target.value))}
-              className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+              className="w-full accent-[#1769AA] cursor-pointer h-1.5 bg-[#E4E9ED] rounded-lg"
             />
           </div>
         </div>
@@ -537,25 +525,25 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
       {/* 4. One-Click Flight Scenarios */}
       <div className="antigravity-glass p-4 rounded-xl flex flex-col gap-3">
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-lg bg-amber-950/70 border border-amber-500/40 flex items-center justify-center text-amber-400">
+          <div className="w-6 h-6 rounded-lg bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA]">
             <Flame className="w-3.5 h-3.5" />
           </div>
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-100 font-sans">
+          <span className="text-xs font-bold uppercase tracking-wider text-[#161A1D] font-sans">
             Quick Flight Regimes
           </span>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2 perspective-1000">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2">
           {presets.map((preset) => (
             <button
               key={preset.name}
               onClick={preset.apply}
               className="antigravity-card p-2.5 rounded-xl text-left transition-all group flex flex-col justify-between"
             >
-              <span className="text-xs font-bold text-slate-200 group-hover:text-cyan-300 transition-colors">
+              <span className="text-xs font-bold text-[#161A1D] group-hover:text-[#1769AA] transition-colors">
                 {preset.name}
               </span>
-              <span className="text-[10px] text-slate-400 mt-0.5 leading-tight">
+              <span className="text-[10px] text-[#5C6670] mt-0.5 leading-tight">
                 {preset.desc}
               </span>
             </button>

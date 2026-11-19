@@ -8,6 +8,7 @@ import { AeroCharts } from './components/AeroCharts';
 import { ControlsDeck } from './components/ControlsDeck';
 import { AeroTheoryModal } from './components/AeroTheoryModal';
 import { ModelViewerModal } from './components/ModelViewerModal';
+import { probeWebGL2Support } from './utils/webglSupport';
 import { 
   Plane, 
   BookOpen, 
@@ -50,7 +51,11 @@ const INITIAL_PARAMS: SimulationParams = {
 };
 
 export default function App() {
-  const [params, setParams] = useState<SimulationParams>(INITIAL_PARAMS);
+  const webglSupported = useMemo(() => probeWebGL2Support().supported, []);
+  const [params, setParams] = useState<SimulationParams>(() => ({
+    ...INITIAL_PARAMS,
+    renderEngine: probeWebGL2Support().supported ? 'webgl' : 'canvas',
+  }));
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [isTheoryOpen, setIsTheoryOpen] = useState<boolean>(false);
   const [isModelViewerOpen, setIsModelViewerOpen] = useState<boolean>(false);
@@ -68,7 +73,10 @@ export default function App() {
 
   // Reset to defaults
   const handleReset = () => {
-    setParams(INITIAL_PARAMS);
+    setParams({
+      ...INITIAL_PARAMS,
+      renderEngine: webglSupported ? 'webgl' : 'canvas',
+    });
     setIsPaused(false);
   };
 
@@ -127,54 +135,51 @@ export default function App() {
   const currentModel = AIRCRAFT_MODELS[params.modelType];
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-[#040711] text-slate-100 flex flex-col font-sans select-none selection:bg-cyan-500/30 selection:text-cyan-200">
+    <div className="h-screen w-screen overflow-hidden bg-[var(--bg)] text-[var(--text)] flex flex-col font-sans select-none selection:bg-[var(--accent-light)] selection:text-[var(--accent)]">
       {/* 1. TOP BAR — CFD WORKSTATION NAVIGATION */}
-      <header className="h-14 px-3 sm:px-4 border-b border-cyan-500/20 bg-[#060a14]/95 backdrop-blur-xl flex items-center justify-between z-30 flex-shrink-0 shadow-lg shadow-black/60">
-        {/* Left Zone: Brand wordmark & flight status badge */}
+      <header className="h-14 px-3 sm:px-4 border-b border-[var(--border)] bg-[var(--nav-bg)] backdrop-blur-md flex items-center justify-between z-30 flex-shrink-0 shadow-[var(--shadow-tech)]">
+        {/* Left Zone: Brand wordmark & flight status readout */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-950 to-slate-900 border border-cyan-500/60 flex items-center justify-center text-cyan-400 shadow-[0_0_14px_rgba(56,189,248,0.35)]">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-[#1769AA] flex items-center justify-center text-white shadow-sm">
               <Plane className="w-4 h-4" />
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm sm:text-base font-bold tracking-tight text-white font-sans">
+            <div className="flex items-baseline gap-2">
+              <span className="text-sm sm:text-base font-bold tracking-tight text-[#161A1D] font-sans">
                 AeroLab
               </span>
-              <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-cyan-950/80 border border-cyan-500/40 text-cyan-300">
-                CFD WORKSTATION
+              <span className="hidden sm:inline text-[11px] font-mono font-semibold text-[#5C6670]">
+                CFD Workstation
               </span>
             </div>
           </div>
 
-          {/* Real-time status pill (Desktop) */}
-          <div className="hidden xl:flex items-center gap-2 pl-3 border-l border-slate-800 text-xs">
-            <span className="text-slate-300 font-medium font-sans">{currentModel.name}</span>
-            <span className="text-slate-600">·</span>
-            <span className="font-mono text-cyan-300 font-semibold">
+          {/* Real-time status readout (Desktop) */}
+          <div className="hidden xl:flex items-center gap-2 pl-3 border-l border-[var(--border)] text-xs">
+            <span className="text-[#161A1D] font-semibold font-sans">{currentModel.name}</span>
+            <span className="text-[#D9DEE2]" aria-hidden="true">·</span>
+            <span className="font-mono tabular-nums text-[#1769AA] font-semibold">
               M {telemetry.mach.toFixed(2)}
             </span>
-            <span className="text-slate-600">·</span>
-            <span className="font-mono text-cyan-300 font-semibold">
+            <span className="text-[#D9DEE2]" aria-hidden="true">·</span>
+            <span className="font-mono tabular-nums text-[#1769AA] font-semibold">
               α {params.angle_of_attack >= 0 ? '+' : ''}{params.angle_of_attack.toFixed(1)}°
             </span>
-            <span className="text-slate-600">·</span>
-            <div className="flex items-center gap-1">
-              <span className={`w-2 h-2 rounded-full ${telemetry.isStalled ? 'bg-red-400 animate-ping' : 'bg-emerald-400'}`} />
-              <span className={`text-[11px] font-mono ${telemetry.isStalled ? 'text-red-300 font-bold' : 'text-slate-400'}`}>
-                {telemetry.flowState}
-              </span>
-            </div>
+            <span className="text-[#D9DEE2]" aria-hidden="true">·</span>
+            <span className={`text-[11px] font-mono font-medium ${telemetry.isStalled ? 'text-red-600 font-bold' : 'text-[#5C6670]'}`}>
+              {telemetry.flowState}
+            </span>
           </div>
         </div>
 
         {/* Center Zone: Mobile & Tablet Segmented Tab Switcher (< lg) */}
-        <div className="flex lg:hidden items-center p-0.5 rounded-xl bg-slate-950 border border-cyan-500/30 text-xs">
+        <div className="flex lg:hidden items-center p-0.5 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-xs">
           <button
             onClick={() => setMobileTab('controls')}
-            className={`px-2.5 py-1 rounded-lg font-semibold flex items-center gap-1.5 transition-all ${
+            className={`px-2.5 py-1 rounded-md font-semibold flex items-center gap-1.5 transition-colors ${
               mobileTab === 'controls'
-                ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/50 shadow-sm'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-[#1769AA] text-white'
+                : 'text-[#5C6670] hover:text-[#161A1D]'
             }`}
           >
             <Sliders className="w-3.5 h-3.5" />
@@ -182,10 +187,10 @@ export default function App() {
           </button>
           <button
             onClick={() => setMobileTab('tunnel')}
-            className={`px-2.5 py-1 rounded-lg font-semibold flex items-center gap-1.5 transition-all ${
+            className={`px-2.5 py-1 rounded-md font-semibold flex items-center gap-1.5 transition-colors ${
               mobileTab === 'tunnel'
-                ? 'bg-cyan-500 text-slate-950 font-bold shadow-[0_0_12px_rgba(6,182,212,0.5)]'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-[#1769AA] text-white'
+                : 'text-[#5C6670] hover:text-[#161A1D]'
             }`}
           >
             <Wind className="w-3.5 h-3.5" />
@@ -193,10 +198,10 @@ export default function App() {
           </button>
           <button
             onClick={() => setMobileTab('results')}
-            className={`px-2.5 py-1 rounded-lg font-semibold flex items-center gap-1.5 transition-all ${
+            className={`px-2.5 py-1 rounded-md font-semibold flex items-center gap-1.5 transition-colors ${
               mobileTab === 'results'
-                ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/50 shadow-sm'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-[#1769AA] text-white'
+                : 'text-[#5C6670] hover:text-[#161A1D]'
             }`}
           >
             <Activity className="w-3.5 h-3.5" />
@@ -209,10 +214,10 @@ export default function App() {
           {/* Desktop Left Sidebar Toggle */}
           <button
             onClick={() => setShowLeftSidebar((prev) => !prev)}
-            className={`hidden lg:flex p-1.5 rounded-lg border transition-all text-xs font-semibold items-center gap-1.5 ${
+            className={`hidden lg:flex px-2.5 py-1.5 rounded-lg border transition-colors text-xs font-semibold items-center gap-1.5 ${
               showLeftSidebar
-                ? 'bg-slate-900 border-slate-700 text-cyan-300'
-                : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-white'
+                ? 'bg-[var(--accent-light)] border-[#1769AA]/30 text-[#1769AA]'
+                : 'bg-[var(--surface)] border-[var(--border)] text-[#5C6670] hover:text-[#161A1D]'
             }`}
             title={showLeftSidebar ? 'Collapse Left Controls Deck' : 'Expand Left Controls Deck'}
           >
@@ -223,10 +228,10 @@ export default function App() {
           {/* Desktop Right Sidebar Toggle */}
           <button
             onClick={() => setShowRightSidebar((prev) => !prev)}
-            className={`hidden lg:flex p-1.5 rounded-lg border transition-all text-xs font-semibold items-center gap-1.5 ${
+            className={`hidden lg:flex px-2.5 py-1.5 rounded-lg border transition-colors text-xs font-semibold items-center gap-1.5 ${
               showRightSidebar
-                ? 'bg-slate-900 border-slate-700 text-cyan-300'
-                : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-white'
+                ? 'bg-[var(--accent-light)] border-[#1769AA]/30 text-[#1769AA]'
+                : 'bg-[var(--surface)] border-[var(--border)] text-[#5C6670] hover:text-[#161A1D]'
             }`}
             title={showRightSidebar ? 'Collapse Right Telemetry Deck' : 'Expand Right Telemetry Deck'}
           >
@@ -234,37 +239,34 @@ export default function App() {
             {showRightSidebar ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}
           </button>
 
-          <div className="hidden lg:block w-px h-5 bg-slate-800 mx-0.5" />
+          <div className="hidden lg:block w-px h-5 bg-[var(--border)] mx-0.5" />
 
           {/* 3D CAD Asset Inspector Trigger */}
           <button
             onClick={() => setIsModelViewerOpen(true)}
-            className="px-2.5 py-1.5 rounded-lg bg-cyan-950/70 border border-cyan-400/40 hover:border-cyan-400 text-xs font-semibold text-cyan-200 hover:text-white transition-all flex items-center gap-1.5 shadow-sm hover:shadow-[0_0_15px_rgba(56,189,248,0.3)]"
+            className="px-2.5 py-1.5 rounded-lg bg-[var(--surface)] border border-[var(--border)] hover:border-[#1769AA] text-xs font-semibold text-[#161A1D] hover:text-[#1769AA] transition-colors flex items-center gap-1.5 shadow-sm"
             title="Inspect 3D GLB CAD Model with Full Turntable & Specifications"
           >
-            <Box className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="hidden sm:inline">F-22 CAD</span>
-            <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-              GLB
-            </span>
+            <Box className="w-3.5 h-3.5 text-[#1769AA]" />
+            <span className="hidden sm:inline">CAD Inspector</span>
           </button>
 
           {/* Theory Modal Trigger */}
           <button
             onClick={() => setIsTheoryOpen(true)}
-            className="hidden sm:flex px-2.5 py-1.5 rounded-lg bg-slate-900/80 border border-cyan-500/30 hover:border-cyan-500/60 text-xs font-semibold text-slate-200 hover:text-white transition-all items-center gap-1.5 whitespace-nowrap shadow-sm hover:shadow-[0_0_15px_rgba(56,189,248,0.25)]"
+            className="hidden sm:flex px-2.5 py-1.5 rounded-lg bg-[var(--surface)] border border-[var(--border)] hover:border-[#1769AA] text-xs font-semibold text-[#161A1D] hover:text-[#1769AA] transition-colors items-center gap-1.5 whitespace-nowrap shadow-sm"
           >
-            <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
+            <BookOpen className="w-3.5 h-3.5 text-[#1769AA]" />
             <span className="hidden md:inline">Theory</span>
           </button>
 
           {/* Audio Toggle */}
           <button
             onClick={() => setParams((p) => ({ ...p, audio_enabled: !p.audio_enabled }))}
-            className={`p-1.5 rounded-lg border transition-all ${
+            className={`p-1.5 rounded-lg border transition-colors ${
               params.audio_enabled
-                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-sm'
-                : 'bg-slate-900/80 text-slate-400 border-slate-800 hover:text-slate-200'
+                ? 'bg-[var(--accent-light)] text-[#1769AA] border-[#1769AA]/40'
+                : 'bg-[var(--surface)] text-[#5C6670] border-[var(--border)] hover:text-[#161A1D]'
             }`}
             title={params.audio_enabled ? 'Mute Audio (M)' : 'Enable Audio (M)'}
           >
@@ -274,7 +276,7 @@ export default function App() {
           {/* Reset Simulation Button */}
           <button
             onClick={handleReset}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white bg-slate-900/80 hover:bg-slate-800 transition-colors border border-slate-800"
+            className="p-1.5 rounded-lg text-[#5C6670] hover:text-[#161A1D] bg-[var(--surface)] hover:bg-[var(--bg)] transition-colors border border-[var(--border)]"
             title="Reset Simulation to Initial State (R)"
           >
             <RotateCcw className="w-4 h-4" />
@@ -293,18 +295,18 @@ export default function App() {
           className={`
             ${showLeftSidebar ? 'lg:flex lg:w-80 xl:w-96' : 'lg:hidden'}
             ${mobileTab === 'controls' ? 'flex flex-1 w-full' : 'hidden'}
-            flex-shrink-0 h-full overflow-y-auto custom-scrollbar border-r border-slate-800/80 bg-[#060913]/95 p-3.5 flex-col gap-3.5 z-20
+            flex-shrink-0 h-full overflow-y-auto custom-scrollbar border-r border-[var(--border)] bg-[var(--bg)] p-3.5 flex-col gap-3.5 z-20
           `}
         >
-          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+          <div className="flex items-center justify-between border-b border-[var(--border)] pb-2">
             <div className="flex items-center gap-2">
-              <Sliders className="w-4 h-4 text-cyan-400" />
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-100 font-sans">
-                Simulation Controls Deck
+              <Sliders className="w-4 h-4 text-[#1769AA]" />
+              <h2 className="text-xs font-bold uppercase tracking-wider text-[#161A1D] font-sans">
+                Simulation Controls
               </h2>
             </div>
-            <span className="text-[10px] font-mono text-cyan-300 bg-cyan-950/70 border border-cyan-500/30 px-1.5 py-0.5 rounded">
-              PORT 1
+            <span className="text-[11px] font-mono text-[#5C6670]">
+              Parameters
             </span>
           </div>
 
@@ -327,7 +329,7 @@ export default function App() {
           aria-label="3D Wind Tunnel Viewport"
           className={`
             ${mobileTab === 'tunnel' ? 'flex flex-1 w-full' : 'hidden lg:flex'}
-            flex-1 h-full min-h-[400px] lg:min-h-0 relative flex-col overflow-hidden bg-[#03060d]
+            flex-1 h-full min-h-[400px] lg:min-h-0 relative flex-col overflow-hidden bg-[var(--bg)] p-2 sm:p-3
           `}
         >
           <div className="w-full h-full relative flex-1 min-h-0">
@@ -346,24 +348,24 @@ export default function App() {
                 onParamChange={handleParamChange}
                 telemetry={telemetry}
                 isPaused={isPaused}
-                onOpenWebGL={() => handleParamChange('renderEngine', 'webgl')}
+                onOpenWebGL={webglSupported ? () => handleParamChange('renderEngine', 'webgl') : undefined}
                 onOpenModelInspector={() => setIsModelViewerOpen(true)}
               />
             )}
           </div>
 
-          {/* Mobile Quick Action Overlay in 3D Viewport */}
-          <div className="lg:hidden absolute bottom-3 left-3 right-3 flex items-center justify-between pointer-events-none z-20">
-            <div className="flex items-center gap-1.5 pointer-events-auto bg-slate-950/90 backdrop-blur-md p-1.5 rounded-xl border border-slate-800 shadow-xl">
-              <span className="text-[10px] text-slate-400 font-mono pl-1">Pitch:</span>
+          {/* Mobile/Tablet Quick Pitch & Pause Bar (placed below viewport to avoid overlapping 3D camera/shading dock) */}
+          <div className="lg:hidden flex items-center justify-between gap-2 pt-2 px-1 flex-shrink-0">
+            <div className="flex items-center gap-1 bg-[var(--surface)] p-1 rounded-lg border border-[var(--border)] shadow-sm">
+              <span className="text-[10px] text-[var(--text-secondary)] font-mono pl-1.5 pr-0.5">Pitch:</span>
               {[-5, 0, 5, 15].map((a) => (
                 <button
                   key={a}
                   onClick={() => handleParamChange('angle_of_attack', a)}
-                  className={`px-2 py-0.5 rounded text-[11px] font-mono transition-all ${
+                  className={`px-2 py-0.5 rounded text-[11px] font-mono transition-colors ${
                     Math.abs(params.angle_of_attack - a) < 1
-                      ? 'bg-cyan-500/30 text-cyan-200 border border-cyan-400 font-bold'
-                      : 'bg-slate-900 text-slate-400 hover:text-white'
+                      ? 'bg-[#1769AA] text-white font-semibold'
+                      : 'bg-[var(--bg)] text-[var(--text)] hover:text-[#1769AA]'
                   }`}
                 >
                   {a >= 0 ? `+${a}°` : `${a}°`}
@@ -371,16 +373,16 @@ export default function App() {
               ))}
             </div>
 
-            <div className="flex items-center gap-1.5 pointer-events-auto">
-              <button
-                onClick={() => setIsPaused((prev) => !prev)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold shadow-lg ${
-                  isPaused ? 'bg-amber-500 text-slate-950 font-bold' : 'bg-slate-900/90 text-slate-200 border border-slate-700'
-                }`}
-              >
-                {isPaused ? 'Resume' : 'Pause'}
-              </button>
-            </div>
+            <button
+              onClick={() => setIsPaused((prev) => !prev)}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold border transition-colors shadow-sm ${
+                isPaused
+                  ? 'bg-amber-500 border-amber-600 text-slate-950 font-bold'
+                  : 'bg-[var(--surface)] border-[var(--border)] text-[var(--text)] hover:border-[#1769AA]'
+              }`}
+            >
+              {isPaused ? 'Resume' : 'Pause'}
+            </button>
           </div>
         </section>
 
@@ -393,18 +395,18 @@ export default function App() {
           className={`
             ${showRightSidebar ? 'lg:flex lg:w-88 xl:w-[420px]' : 'lg:hidden'}
             ${mobileTab === 'results' ? 'flex flex-1 w-full' : 'hidden'}
-            flex-shrink-0 h-full overflow-y-auto custom-scrollbar border-l border-slate-800/80 bg-[#060913]/95 p-3.5 flex-col gap-3.5 z-20
+            flex-shrink-0 h-full overflow-y-auto custom-scrollbar border-l border-[var(--border)] bg-[var(--bg)] p-3.5 flex-col gap-3.5 z-20
           `}
         >
-          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+          <div className="flex items-center justify-between border-b border-[var(--border)] pb-2">
             <div className="flex items-center gap-2">
-              <Activity className="w-4 h-4 text-cyan-400" />
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-100 font-sans">
-                Telemetry &amp; Results Deck
+              <Activity className="w-4 h-4 text-[#1769AA]" />
+              <h2 className="text-xs font-bold uppercase tracking-wider text-[#161A1D] font-sans">
+                Telemetry &amp; Polars
               </h2>
             </div>
-            <span className="text-[10px] font-mono text-cyan-300 bg-cyan-950/70 border border-cyan-500/30 px-1.5 py-0.5 rounded">
-              PORT 2
+            <span className="text-[11px] font-mono text-[#5C6670]">
+              Vortex Lattice
             </span>
           </div>
 
@@ -427,22 +429,22 @@ export default function App() {
           />
 
           {/* Real-Time Flow Dynamics Insight Card */}
-          <div className="antigravity-glass-subtle p-3.5 rounded-xl text-xs text-slate-400 flex flex-col gap-2 leading-relaxed border border-slate-800/80">
-            <div className="flex items-center gap-2 text-slate-200 font-semibold">
-              <div className="w-5 h-5 rounded-md bg-cyan-950/70 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+          <div className="antigravity-glass p-3.5 rounded-xl text-xs text-[#5C6670] flex flex-col gap-2 leading-relaxed">
+            <div className="flex items-center gap-2 text-[#161A1D] font-semibold">
+              <div className="w-5 h-5 rounded-md bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA]">
                 <Wind className="w-3 h-3" />
               </div>
-              <span className="text-cyan-200 font-bold text-xs">Real-Time Flow Dynamics Insight</span>
+              <span className="text-[#161A1D] font-bold text-xs">Vortex &amp; Vertex Flow Law</span>
             </div>
-            <p className="text-[11px] leading-relaxed">
-              In the wind tunnel chamber, flow streamlines deflect around the aircraft profile. Notice the aerodynamic downwash angle dipping behind the trailing edge, confirming active Kutta circulation.
+            <p className="text-[11px] leading-relaxed text-[#5C6670]">
+              Streamlines and PIV streaks are integrated with RK2 midpoint advection through a 3D Biot-Savart horseshoe vortex lattice coupled to real surface vertex normals for boundary tangential slip.
               {telemetry.isStalled ? (
-                <span className="text-red-400 font-medium block mt-1.5 p-2 rounded-lg bg-red-950/40 border border-red-500/40">
-                  ⚠️ Current high Angle of Attack exceeds the critical stall limit! Adverse pressure gradients have decoupled the boundary layer, producing a turbulent separation wake.
+                <span className="text-red-700 font-medium block mt-2 p-2 rounded-lg bg-red-50 border border-red-200">
+                  Critical angle of attack exceeded. Adverse pressure gradients have detached the boundary layer, shedding unsteady von Kármán wake vortices.
                 </span>
               ) : (
-                <span className="text-slate-300 block mt-1">
-                  Flow remains attached across the suction surface. Trailing downwash confirms active Kutta-condition circulation.
+                <span className="text-[#161A1D] block mt-1.5 font-medium">
+                  Attached circulation Γ remains steady; Lamb-Oseen wingtip vortices trail downstream from actual spanwise tips.
                 </span>
               )}
             </p>
@@ -451,36 +453,36 @@ export default function App() {
       </main>
 
       {/* 3. WORKSTATION BOTTOM STATUS STRIP */}
-      <footer className="h-7 border-t border-slate-800/80 bg-[#03060c] px-3 sm:px-4 flex items-center justify-between text-[11px] text-slate-400 z-30 flex-shrink-0">
-        <div className="hidden sm:flex items-center gap-3">
-          <div className="flex items-center gap-1 text-slate-400 font-semibold">
-            <Keyboard className="w-3 h-3 text-cyan-400" />
+      <footer className="h-7 border-t border-[var(--border)] bg-[var(--surface)] px-3 sm:px-4 flex items-center justify-between gap-2 text-[11px] text-[#5C6670] z-30 flex-shrink-0 overflow-hidden">
+        <div className="hidden xl:flex items-center gap-2.5 whitespace-nowrap">
+          <div className="flex items-center gap-1 text-[#161A1D] font-semibold">
+            <Keyboard className="w-3 h-3 text-[#1769AA]" />
             <span>Hotkeys:</span>
           </div>
-          <span className="font-mono text-[10px] bg-slate-900 border border-slate-800 px-1 py-0.2 rounded text-slate-300">Space</span> Pause
-          <span className="font-mono text-[10px] bg-slate-900 border border-slate-800 px-1 py-0.2 rounded text-slate-300">↑/↓</span> Pitch AoA
-          <span className="font-mono text-[10px] bg-slate-900 border border-slate-800 px-1 py-0.2 rounded text-slate-300">←/→</span> Airspeed
-          <span className="font-mono text-[10px] bg-slate-900 border border-slate-800 px-1 py-0.2 rounded text-slate-300">M</span> Audio
-          <span className="font-mono text-[10px] bg-slate-900 border border-slate-800 px-1 py-0.2 rounded text-slate-300">R</span> Reset
+          <span className="font-mono text-[10px] bg-[var(--bg)] border border-[var(--border)] px-1.5 py-0.2 rounded text-[#161A1D]">Space</span> Pause
+          <span className="font-mono text-[10px] bg-[var(--bg)] border border-[var(--border)] px-1.5 py-0.2 rounded text-[#161A1D]">↑/↓</span> Pitch AoA
+          <span className="font-mono text-[10px] bg-[var(--bg)] border border-[var(--border)] px-1.5 py-0.2 rounded text-[#161A1D]">←/→</span> Airspeed
+          <span className="font-mono text-[10px] bg-[var(--bg)] border border-[var(--border)] px-1.5 py-0.2 rounded text-[#161A1D]">M</span> Audio
+          <span className="font-mono text-[10px] bg-[var(--bg)] border border-[var(--border)] px-1.5 py-0.2 rounded text-[#161A1D]">R</span> Reset
         </div>
 
-        <div className="flex items-center gap-3 font-mono text-[10px] text-slate-500">
-          <span>ISA Standard Atm</span>
-          <span>·</span>
+        <div className="flex items-center gap-2 font-mono text-[10px] text-[#5C6670] tabular-nums whitespace-nowrap">
+          <span>ISA Std Atm</span>
+          <span className="text-[var(--border)]" aria-hidden="true">·</span>
           <span>FL{params.altitude_ft.toLocaleString()}</span>
-          <span>·</span>
+          <span className="text-[var(--border)]" aria-hidden="true">·</span>
           <span>ρ = {telemetry.air_density_kg_m3.toFixed(3)} kg/m³</span>
         </div>
 
-        <div className="flex items-center gap-2 text-slate-400 text-[10px]">
+        <div className="flex items-center gap-2 text-[#5C6670] text-[10px] whitespace-nowrap">
           <button
             onClick={() => setIsTheoryOpen(true)}
-            className="hover:text-cyan-400 transition-colors"
+            className="hover:text-[#1769AA] font-medium transition-colors"
           >
-            Flight Physics Theory Guide
+            Theory Guide
           </button>
-          <span>·</span>
-          <span className="hidden md:inline">AeroLab Workstation</span>
+          <span className="hidden md:inline text-[var(--border)]" aria-hidden="true">·</span>
+          <span className="hidden md:inline font-medium text-[#161A1D]">AeroLab Workstation</span>
         </div>
       </footer>
 

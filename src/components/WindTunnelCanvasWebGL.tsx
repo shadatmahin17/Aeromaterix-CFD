@@ -1,32 +1,30 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { SimulationParams, AeroTelemetry } from '../types/aerodynamics';
 import { AIRCRAFT_MODELS } from '../utils/airfoilGenerators';
-import { getAircraft3DModel } from '../utils/aircraft3DGeometry';
-import { 
-  loadGlbAircraftModel, 
-  GLB_MODEL_REGISTRY, 
-  applyCfdPressureHeatmap, 
-  restoreOriginalGlbMaterials, 
-  applyWireframeShading, 
-  createAeroForceVectorsGroup, 
-  updateAeroForceVectors 
+import { getAircraft3DModel, Vertex3D } from '../utils/aircraft3DGeometry';
+import {
+  loadGlbAircraftModel,
+  GLB_MODEL_REGISTRY,
+  applyCfdPressureHeatmap,
+  restoreOriginalGlbMaterials,
+  applyWireframeShading,
+  createAeroForceVectorsGroup,
+  updateAeroForceVectors,
 } from '../utils/aircraftGlbModels';
 import { FluidDynamics3D, Fluid3DParams } from '../engine/FluidDynamics3D';
+import { AircraftSurfaceField } from '../engine/AircraftSurfaceField';
 import { windTunnelAudio } from '../utils/audio';
-import { 
-  RotateCw, 
-  AlertTriangle, 
-  Volume2, 
-  VolumeX, 
-  Layers, 
-  Box, 
-  Camera, 
-  Flame, 
-  Eye, 
-  Sun,
-  Maximize2 
+import { createSafeWebGLRenderer } from '../utils/webglSupport';
+import {
+  AlertTriangle,
+  Volume2,
+  VolumeX,
+  Box,
+  Camera,
+  RotateCw,
 } from 'lucide-react';
 
 interface WindTunnelCanvasWebGLProps {
@@ -36,6 +34,10 @@ interface WindTunnelCanvasWebGLProps {
   isPaused: boolean;
   onFallbackToCanvas?: () => void;
   onOpenModelInspector?: () => void;
+}
+
+interface TracedCurveData {
+  points: (Vertex3D & { speed: number; pressureCoeff: number; vorticity: number; isSeparated: boolean })[];
 }
 
 export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
@@ -60,29 +62,38 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
   telemetryRef.current = telemetry;
   const isPausedRef = useRef(isPaused);
   isPausedRef.current = isPaused;
+  const surfaceFieldRef = useRef<AircraftSurfaceField | null>(null);
 
   // Model & Simulation Roots
   const aircraftGroupRef = useRef<THREE.Group | null>(null);
   const glbRootRef = useRef<THREE.Group | null>(null);
   const proceduralMeshRef = useRef<THREE.Mesh | null>(null);
   const streamlinesGroupRef = useRef<THREE.Group | null>(null);
-  const particlesPointsRef = useRef<THREE.Points | null>(null);
+  const quiverGroupRef = useRef<THREE.Group | null>(null);
+  const tracedCurvesRef = useRef<TracedCurveData[]>([]);
+  const smokePulsesRef = useRef<THREE.Points | null>(null);
+
+  // PIV Particle Streak Buffers
+  const particleStreaksRef = useRef<THREE.LineSegments | null>(null);
   const particlePositionsRef = useRef<Float32Array | null>(null);
-  const particleVelocitiesRef = useRef<Float32Array | null>(null);
+
   const machConeMeshRef = useRef<THREE.Mesh | null>(null);
   const forceVectorsGroupRef = useRef<THREE.Group | null>(null);
   const afterburnerGroupRef = useRef<THREE.Group | null>(null);
-  const lightsGroupRef = useRef<THREE.Group | null>(null);
 
   // UI state
   const [activePreset, setActivePreset] = useState<'iso' | 'side' | 'top' | 'front' | 'chase'>('iso');
   const [isAutoOrbit, setIsAutoOrbit] = useState<boolean>(false);
+  const isAutoOrbitRef = useRef<boolean>(false);
+  isAutoOrbitRef.current = isAutoOrbit;
+  const onFallbackRef = useRef(onFallbackToCanvas);
+  onFallbackRef.current = onFallbackToCanvas;
+  const [webglUnavailable, setWebglUnavailable] = useState<boolean>(false);
   const [modelLoading, setModelLoading] = useState<boolean>(true);
   const [loadProgress, setLoadProgress] = useState<number>(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeShading, setActiveShading] = useState<'pbr' | 'wireframe' | 'cfdHeatmap' | 'xray'>('pbr');
-  const [gearDeployed, setGearDeployed] = useState<boolean>(false);
-  const [activeLighting, setActiveLighting] = useState<'tunnel' | 'studio' | 'sunset' | 'cyber'>('tunnel');
+  const [surfaceVersion, setSurfaceVersion] = useState<number>(0);
 
   // Sync Audio with simulation speed & stall
   useEffect(() => {
@@ -102,92 +113,87 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
     const width = mount.clientWidth || 900;
     const height = mount.clientHeight || 560;
 
-    // 1. Scene
+    // 1. Scene (--dark: #0D1114)
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.background = new THREE.Color(0x060a12);
-    scene.fog = new THREE.FogExp2(0x060a12, 0.012);
+    scene.background = new THREE.Color(0x0d1114);
+    scene.fog = new THREE.FogExp2(0x0d1114, 0.011);
 
     // 2. Camera
     const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 400);
     camera.position.set(-15, 7.5, 15);
     cameraRef.current = camera;
 
-    // 3. Renderer
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance', preserveDrawingBuffer: true });
+    // 3. Renderer (safely probed)
+    const renderer = createSafeWebGLRenderer({
+      antialias: true,
+      alpha: false,
+      powerPreference: 'high-performance',
+      preserveDrawingBuffer: true,
+    });
+    if (!renderer) {
+      setWebglUnavailable(true);
+      setModelLoading(false);
+      onFallbackRef.current?.();
+      return;
+    }
+
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.35;
+    renderer.toneMappingExposure = 1.25;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     mount.innerHTML = '';
     mount.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
+    // Studio IBL environment for crisp metallic PBR reflections
+    let envTex: THREE.Texture | null = null;
+    try {
+      const pmremGenerator = new THREE.PMREMGenerator(renderer);
+      envTex = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+      scene.environment = envTex;
+      pmremGenerator.dispose();
+    } catch {
+      // Fallback gracefully if PMREM fails on constrained drivers
+    }
+
+    const handleContextLost = (e: Event) => {
+      e.preventDefault();
+      setWebglUnavailable(true);
+      onFallbackRef.current?.();
+    };
+    renderer.domElement.addEventListener('webglcontextlost', handleContextLost, false);
+
     // 4. OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
+    controls.dampingFactor = 0.06;
     controls.maxDistance = 50;
     controls.minDistance = 3.5;
     controls.target.set(0, 0, 0);
     controlsRef.current = controls;
 
-    // 5. Lighting System
-    const lightsGroup = new THREE.Group();
-    scene.add(lightsGroup);
-    lightsGroupRef.current = lightsGroup;
+    // 5. Studio 3-Point + Hemisphere Lighting Rig
+    const hemi = new THREE.HemisphereLight(0xe8f3fa, 0x151a1e, 0.85);
+    scene.add(hemi);
 
-    const applyLighting = (preset: 'tunnel' | 'studio' | 'sunset' | 'cyber') => {
-      lightsGroup.clear();
-      if (preset === 'tunnel') {
-        lightsGroup.add(new THREE.AmbientLight(0x38bdf8, 0.7));
-        const key = new THREE.DirectionalLight(0xe0f2fe, 2.5);
-        key.position.set(-18, 22, 16);
-        lightsGroup.add(key);
-        const rim = new THREE.DirectionalLight(0x0284c7, 1.8);
-        rim.position.set(18, -10, -14);
-        lightsGroup.add(rim);
-        const fill = new THREE.DirectionalLight(0x10b981, 0.6);
-        fill.position.set(-5, -12, 0);
-        lightsGroup.add(fill);
-      } else if (preset === 'studio') {
-        lightsGroup.add(new THREE.AmbientLight(0xffffff, 1.2));
-        const key = new THREE.DirectionalLight(0xffffff, 2.8);
-        key.position.set(12, 24, 12);
-        lightsGroup.add(key);
-        const fill = new THREE.DirectionalLight(0xf1f5f9, 1.5);
-        fill.position.set(-12, 10, -12);
-        lightsGroup.add(fill);
-      } else if (preset === 'sunset') {
-        lightsGroup.add(new THREE.AmbientLight(0xf59e0b, 0.8));
-        const key = new THREE.DirectionalLight(0xf97316, 3.2);
-        key.position.set(-20, 12, 6);
-        lightsGroup.add(key);
-        const rim = new THREE.DirectionalLight(0x7c3aed, 1.8);
-        rim.position.set(20, -5, -10);
-        lightsGroup.add(rim);
-      } else {
-        // Cyberpunk
-        lightsGroup.add(new THREE.AmbientLight(0x06b6d4, 0.8));
-        const key = new THREE.DirectionalLight(0x00f0ff, 2.6);
-        key.position.set(-15, 18, 12);
-        lightsGroup.add(key);
-        const rim = new THREE.DirectionalLight(0xf43f5e, 2.6);
-        rim.position.set(15, -10, -15);
-        lightsGroup.add(rim);
-      }
-    };
-    applyLighting(activeLighting);
+    const key = new THREE.DirectionalLight(0xffffff, 2.4);
+    key.position.set(-16, 22, 16);
+    scene.add(key);
 
-    // 6. Chamber Floor Grid
-    const gridFloor = new THREE.GridHelper(36, 36, 0x00f0ff, 0x1e3a5f);
+    const rim = new THREE.DirectionalLight(0x38bdf8, 1.4);
+    rim.position.set(18, -8, -14);
+    scene.add(rim);
+
+    // 6. Chamber Floor Grid (--dark-surface & --accent)
+    const gridFloor = new THREE.GridHelper(36, 36, 0x1769aa, 0x1e2730);
     gridFloor.position.y = -4.5;
     scene.add(gridFloor);
 
     // Lateral rails
-    const railMat = new THREE.LineBasicMaterial({ color: 0x0284c7, transparent: true, opacity: 0.35 });
-    for (let rz of [-8, 8]) {
+    const railMat = new THREE.LineBasicMaterial({ color: 0x1769aa, transparent: true, opacity: 0.4 });
+    for (const rz of [-8, 8]) {
       const railGeo = new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(-18, -4.5, rz),
         new THREE.Vector3(18, -4.5, rz),
@@ -195,7 +201,7 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
       scene.add(new THREE.Line(railGeo, railMat));
     }
 
-    // 7. Aircraft Root Group (holds models and pitches with AoA)
+    // 7. Aircraft Root Group
     const aircraftGroup = new THREE.Group();
     aircraftGroup.name = 'AircraftGroup';
     scene.add(aircraftGroup);
@@ -220,92 +226,111 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
     }
     abGroup.visible = false;
 
-    // 8. Flow Particles System
-    const particleCount = 850;
+    // 8. PIV Velocity-Aligned Particle Streak System (LineSegments: 2 vertices per particle)
+    const particleCount = 900;
     const pPositions = new Float32Array(particleCount * 3);
-    const pVelocities = new Float32Array(particleCount);
-    const pColors = new Float32Array(particleCount * 3);
-
-    const palette = [
-      new THREE.Color('#00f0ff'),
-      new THREE.Color('#38bdf8'),
-      new THREE.Color('#10b981'),
-      new THREE.Color('#fbbf24'),
-    ];
+    const streakPositions = new Float32Array(particleCount * 6);
+    const streakColors = new Float32Array(particleCount * 6);
 
     const spawnParticle = (idx: number, isInitial = false) => {
-      // 40% wing streamtubes, 30% wingtip vortices, 20% fuselage/canopy, 10% ambient
       const roll = Math.random();
       let y = 0;
       let z = 0;
+      const activeSpan = surfaceFieldRef.current ? surfaceFieldRef.current.halfSpan : 6.8;
 
-      if (roll < 0.40) {
-        // Wing streamtubes
-        y = -0.8 + Math.random() * 2.2;
-        z = -7.5 + Math.random() * 15.0;
-      } else if (roll < 0.70) {
-        // Wingtip vortex roll-up cores (starboard or port)
+      if (roll < 0.45) {
+        y = -0.85 + Math.random() * 2.1;
+        z = -activeSpan * 0.95 + Math.random() * (activeSpan * 1.9);
+      } else if (roll < 0.78) {
+        // Wingtip vortex roll-up seeding
         const tipSign = Math.random() > 0.5 ? 1 : -1;
-        const tipSpan = 6.8 + (Math.random() - 0.5) * 1.2;
-        z = tipSign * tipSpan;
-        y = -0.3 + Math.random() * 1.0;
-      } else if (roll < 0.90) {
-        // Fuselage & cockpit canopy smoke stream
-        y = -0.6 + Math.random() * 2.0;
+        z = tipSign * (activeSpan * 0.94 + (Math.random() - 0.5) * 1.1);
+        y = -0.35 + Math.random() * 1.0;
+      } else if (roll < 0.92) {
+        y = -0.6 + Math.random() * 1.9;
         z = -1.2 + Math.random() * 2.4;
       } else {
-        // Ambient wind tunnel background
-        y = -3.5 + Math.random() * 7.0;
+        y = -3.4 + Math.random() * 6.8;
         z = -8.5 + Math.random() * 17.0;
       }
 
-      const x = isInitial ? (-21 + Math.random() * 42) : -21;
+      const x = isInitial ? -21 + Math.random() * 42 : -21;
       pPositions[idx * 3] = x;
       pPositions[idx * 3 + 1] = y;
       pPositions[idx * 3 + 2] = z;
-      pVelocities[idx] = 0.38 + Math.random() * 0.22;
 
-      const c = palette[idx % palette.length];
-      pColors[idx * 3] = c.r;
-      pColors[idx * 3 + 1] = c.g;
-      pColors[idx * 3 + 2] = c.b;
+      streakPositions[idx * 6] = x - 0.35;
+      streakPositions[idx * 6 + 1] = y;
+      streakPositions[idx * 6 + 2] = z;
+      streakPositions[idx * 6 + 3] = x;
+      streakPositions[idx * 6 + 4] = y;
+      streakPositions[idx * 6 + 5] = z;
+
+      // Initial freestream tint
+      streakColors[idx * 6] = 0.09;
+      streakColors[idx * 6 + 1] = 0.41;
+      streakColors[idx * 6 + 2] = 0.67;
+      streakColors[idx * 6 + 3] = 0.35;
+      streakColors[idx * 6 + 4] = 0.78;
+      streakColors[idx * 6 + 5] = 0.98;
     };
 
     for (let i = 0; i < particleCount; i++) {
       spawnParticle(i, true);
     }
 
-    const pGeo = new THREE.BufferGeometry();
-    pGeo.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
-    pGeo.setAttribute('color', new THREE.BufferAttribute(pColors, 3));
+    const streakGeo = new THREE.BufferGeometry();
+    streakGeo.setAttribute('position', new THREE.BufferAttribute(streakPositions, 3));
+    streakGeo.setAttribute('color', new THREE.BufferAttribute(streakColors, 3));
 
-    const pMat = new THREE.PointsMaterial({
-      size: 0.22,
+    const streakMat = new THREE.LineBasicMaterial({
       vertexColors: true,
       transparent: true,
-      opacity: 0.88,
+      opacity: 0.85,
       blending: THREE.AdditiveBlending,
     });
 
-    const particles = new THREE.Points(pGeo, pMat);
-    scene.add(particles);
-    particlesPointsRef.current = particles;
+    const particleStreaks = new THREE.LineSegments(streakGeo, streakMat);
+    particleStreaks.frustumCulled = false;
+    scene.add(particleStreaks);
+    particleStreaksRef.current = particleStreaks;
     particlePositionsRef.current = pPositions;
-    particleVelocitiesRef.current = pVelocities;
 
-    // 9. Streamlines Group
+    // 9. Streamlines & Travelling Smoke Pulse Beads
     const streamlinesGroup = new THREE.Group();
     scene.add(streamlinesGroup);
     streamlinesGroupRef.current = streamlinesGroup;
 
-    // 10. Supersonic Mach Shockwave Cone
-    const coneRadius = 6.0;
-    const coneHeight = 16.0;
-    const coneGeo = new THREE.ConeGeometry(coneRadius, coneHeight, 32, 1, true);
+    const pulseMaxCount = 240;
+    const pulsePos = new Float32Array(pulseMaxCount * 3);
+    const pulseCol = new Float32Array(pulseMaxCount * 3);
+    const pulseGeo = new THREE.BufferGeometry();
+    pulseGeo.setAttribute('position', new THREE.BufferAttribute(pulsePos, 3));
+    pulseGeo.setAttribute('color', new THREE.BufferAttribute(pulseCol, 3));
+    const pulseMat = new THREE.PointsMaterial({
+      size: 0.24,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const smokePulses = new THREE.Points(pulseGeo, pulseMat);
+    smokePulses.frustumCulled = false;
+    scene.add(smokePulses);
+    smokePulsesRef.current = smokePulses;
+
+    // 10. Vector Quiver Group
+    const quiverGroup = new THREE.Group();
+    scene.add(quiverGroup);
+    quiverGroupRef.current = quiverGroup;
+
+    // 11. Supersonic Mach Shockwave Cone
+    const coneGeo = new THREE.ConeGeometry(6.0, 16.0, 32, 1, true);
     coneGeo.rotateZ(Math.PI / 2);
-    coneGeo.translate(coneHeight / 2 - 6.7, 0, 0);
+    coneGeo.translate(8.0 - 6.7, 0, 0);
     const coneMat = new THREE.MeshBasicMaterial({
-      color: 0x00f0ff,
+      color: 0x38bdf8,
       transparent: true,
       opacity: 0.22,
       wireframe: true,
@@ -316,101 +341,183 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
     scene.add(machConeMesh);
     machConeMeshRef.current = machConeMesh;
 
-    // 11. Aerodynamic 3D Force Vectors (Lift, Drag, Resultant, CP Ring)
+    // 12. Aerodynamic 3D Force Vectors
     const forceGroup = createAeroForceVectorsGroup();
     scene.add(forceGroup);
     forceVectorsGroupRef.current = forceGroup;
 
-    // 12. Animation Loop
+    // 13. 60fps Simulation Loop (RK2 Particle Advection + Travelling Smoke Pulses)
     let lastTime = performance.now();
     const animate = () => {
       animFrameIdRef.current = requestAnimationFrame(animate);
 
       const now = performance.now();
-      const dt = Math.min((now - lastTime) / 1000, 0.1);
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
       lastTime = now;
 
-      if (isAutoOrbit && controlsRef.current) {
+      if (isAutoOrbitRef.current && controlsRef.current) {
         controlsRef.current.autoRotate = true;
         controlsRef.current.autoRotateSpeed = 1.2;
       } else if (controlsRef.current) {
         controlsRef.current.autoRotate = false;
       }
 
-      // Update Flow Particles
-      // Update Flow Particles using live aerodynamic state
       const currentParams = paramsRef.current;
       const currentTelemetry = telemetryRef.current;
       const currentPaused = isPausedRef.current;
 
-      if (particlePositionsRef.current && particlesPointsRef.current && currentParams.show_particles) {
-        const pos = particlePositionsRef.current;
-        const colorAttr = particlesPointsRef.current.geometry.attributes.color as THREE.BufferAttribute;
-        const fluid3DParams: Fluid3DParams = {
-          modelType: currentParams.modelType,
-          aoaDeg: currentParams.angle_of_attack,
-          airspeed_kts: currentParams.airspeed_kts,
-          mach: currentTelemetry.mach,
-          altitude_ft: currentParams.altitude_ft,
-          flapsDeg: currentParams.flaps_deg,
-          isStalled: currentTelemetry.isStalled,
-          cl: currentTelemetry.cl,
-          cd: currentTelemetry.cd,
-          timeSec: now * 0.001,
-        };
+      const fluid3DParams: Fluid3DParams = {
+        modelType: currentParams.modelType,
+        aoaDeg: currentParams.angle_of_attack,
+        airspeed_kts: currentParams.airspeed_kts,
+        mach: currentTelemetry.mach,
+        altitude_ft: currentParams.altitude_ft,
+        flapsDeg: currentParams.flaps_deg,
+        viscosity: currentParams.viscosity,
+        isStalled: currentTelemetry.isStalled,
+        cl: currentTelemetry.cl,
+        cd: currentTelemetry.cd,
+        timeSec: now * 0.001,
+        surfaceField: surfaceFieldRef.current,
+      };
 
-        const activeSpan = currentParams.modelType === 'airliner' ? 9.2 : (currentParams.modelType === 'concorde' ? 4.8 : (currentParams.modelType === 'naca2412' || currentParams.modelType === 'naca0012' ? 7.0 : 6.8));
+      // A. Update PIV Velocity-Aligned Streaks via RK2 Midpoint Integration
+      if (particlePositionsRef.current && particleStreaksRef.current) {
+        particleStreaksRef.current.visible = currentParams.show_particles;
+        if (currentParams.show_particles) {
+          const pos = particlePositionsRef.current;
+          const posAttr = particleStreaksRef.current.geometry.attributes.position as THREE.BufferAttribute;
+          const colAttr = particleStreaksRef.current.geometry.attributes.color as THREE.BufferAttribute;
+          const streakArr = posAttr.array as Float32Array;
+          const colArr = colAttr.array as Float32Array;
+          const activeCount = Math.min(particleCount, Math.max(220, Math.round(particleCount * Math.min(1, currentParams.smoke_density * 0.85))));
+          particleStreaksRef.current.geometry.setDrawRange(0, activeCount * 2);
 
-        for (let i = 0; i < particleCount; i++) {
-          const px = pos[i * 3];
-          const py = pos[i * 3 + 1];
-          const pz = pos[i * 3 + 2];
+          const mat = particleStreaksRef.current.material as THREE.LineBasicMaterial;
+          mat.opacity = Math.min(0.95, 0.45 + currentParams.smoke_density * 0.32);
 
-          if (!currentPaused) {
-            const vel3D = FluidDynamics3D.getVelocity({ x: px, y: py, z: pz }, fluid3DParams);
-            pos[i * 3] += vel3D.u * 0.38;
-            pos[i * 3 + 1] += vel3D.v * 0.38;
-            pos[i * 3 + 2] += vel3D.w * 0.38;
+          const stepScale = dt * 15.0;
 
-            if (colorAttr) {
-              if (vel3D.isSeparated || (currentTelemetry.isStalled && px > -1.0)) {
-                colorAttr.setXYZ(i, 0.94, 0.27, 0.27);
-              } else if (vel3D.pressureCoeff < -0.7) {
-                colorAttr.setXYZ(i, 0.0, 0.94, 1.0);
-              } else if (vel3D.pressureCoeff > 0.3) {
-                colorAttr.setXYZ(i, 0.98, 0.75, 0.14);
+          for (let i = 0; i < activeCount; i++) {
+            const px = pos[i * 3];
+            const py = pos[i * 3 + 1];
+            const pz = pos[i * 3 + 2];
+
+            const v1 = FluidDynamics3D.getVelocity({ x: px, y: py, z: pz }, fluid3DParams);
+
+            if (!currentPaused) {
+              // RK2 midpoint evaluation
+              const mx = px + v1.u * stepScale * 0.5;
+              const my = py + v1.v * stepScale * 0.5;
+              const mz = pz + v1.w * stepScale * 0.5;
+              const v2 = FluidDynamics3D.getVelocity({ x: mx, y: my, z: mz }, fluid3DParams);
+
+              const nx = px + v2.u * stepScale;
+              const ny = py + v2.v * stepScale;
+              const nz = pz + v2.w * stepScale;
+
+              pos[i * 3] = nx;
+              pos[i * 3 + 1] = ny;
+              pos[i * 3 + 2] = nz;
+
+              const speed = v2.speed || 1;
+              const streakLen = Math.min(1.35, 0.28 + speed * 0.38);
+              const invS = streakLen / speed;
+
+              // Tail -> Head aligned with real velocity vector
+              streakArr[i * 6] = nx - v2.u * invS;
+              streakArr[i * 6 + 1] = ny - v2.v * invS;
+              streakArr[i * 6 + 2] = nz - v2.w * invS;
+              streakArr[i * 6 + 3] = nx;
+              streakArr[i * 6 + 4] = ny;
+              streakArr[i * 6 + 5] = nz;
+
+              // Color by real flow physics: Separation / Suction / Vorticity / Compression
+              let hr = 0.22, hg = 0.74, hb = 0.97;
+              if (v2.isSeparated || (currentTelemetry.isStalled && nx > -1.0 && ny > -0.5)) {
+                hr = 0.96; hg = 0.28; hb = 0.28; // Separated turbulent wake
+              } else if (v2.vorticity > 0.35) {
+                hr = 0.35; hg = 0.92; hb = 1.0; // Intense Biot-Savart vortex swirl
+              } else if (v2.pressureCoeff < -0.55) {
+                hr = 0.09; hg = 0.58; hb = 0.92; // Bernoulli suction peak
+              } else if (v2.pressureCoeff > 0.25) {
+                hr = 0.98; hg = 0.72; hb = 0.16; // Stagnation / compression
+              } else {
+                hr = 0.20; hg = 0.83; hb = 0.60; // Laminar freestream
               }
+
+              // Dim tail, bright head
+              colArr[i * 6] = hr * 0.28;
+              colArr[i * 6 + 1] = hg * 0.28;
+              colArr[i * 6 + 2] = hb * 0.28;
+              colArr[i * 6 + 3] = hr;
+              colArr[i * 6 + 4] = hg;
+              colArr[i * 6 + 5] = hb;
+            }
+
+            if (pos[i * 3] > 22 || Math.abs(pos[i * 3 + 1]) > 8.5 || Math.abs(pos[i * 3 + 2]) > 14.5) {
+              spawnParticle(i, false);
             }
           }
 
-          if (pos[i * 3] > 22 || Math.abs(pos[i * 3 + 1]) > 8 || Math.abs(pos[i * 3 + 2]) > 14) {
-            pos[i * 3] = -21;
-            const roll = Math.random();
-            if (roll < 0.45) {
-              // Wing streamtubes scaled to active aircraft span
-              pos[i * 3 + 1] = -0.75 + Math.random() * 2.0;
-              pos[i * 3 + 2] = -activeSpan * 0.9 + Math.random() * (activeSpan * 1.8);
-            } else if (roll < 0.75) {
-              // Wingtip vortex roll-up cores
-              const tipSign = Math.random() > 0.5 ? 1 : -1;
-              pos[i * 3 + 1] = -0.25 + Math.random() * 0.8;
-              pos[i * 3 + 2] = tipSign * (activeSpan + (Math.random() - 0.5) * 0.9);
-            } else if (roll < 0.90) {
-              // Fuselage & cockpit stream
-              pos[i * 3 + 1] = -0.5 + Math.random() * 1.8;
-              pos[i * 3 + 2] = -1.1 + Math.random() * 2.2;
-            } else {
-              pos[i * 3 + 1] = -3.5 + Math.random() * 7.0;
-              pos[i * 3 + 2] = -8.5 + Math.random() * 17.0;
+          posAttr.needsUpdate = true;
+          colAttr.needsUpdate = true;
+        }
+      }
+
+      // B. Animate Travelling Smoke Pulses along Traced Vortex Streamlines
+      if (smokePulsesRef.current) {
+        const curves = tracedCurvesRef.current;
+        const showSmoke = currentParams.show_streamlines && curves.length > 0;
+        smokePulsesRef.current.visible = showSmoke;
+
+        if (showSmoke) {
+          const pPosAttr = smokePulsesRef.current.geometry.attributes.position as THREE.BufferAttribute;
+          const pColAttr = smokePulsesRef.current.geometry.attributes.color as THREE.BufferAttribute;
+          const pArr = pPosAttr.array as Float32Array;
+          const cArr = pColAttr.array as Float32Array;
+
+          const pulsesPerCurve = 3;
+          const totalPulses = Math.min(pulseMaxCount, curves.length * pulsesPerCurve);
+          smokePulsesRef.current.geometry.setDrawRange(0, totalPulses);
+
+          const speedFactor = (currentParams.airspeed_kts / 350) * 0.35;
+          let idx = 0;
+
+          for (let c = 0; c < curves.length && idx < totalPulses; c++) {
+            const pts = curves[c].points;
+            if (pts.length < 2) continue;
+
+            for (let k = 0; k < pulsesPerCurve && idx < totalPulses; k++) {
+              const t = ((now * 0.001 * speedFactor + c * 0.17 + k / pulsesPerCurve) % 1 + 1) % 1;
+              const fIdx = t * (pts.length - 1);
+              const i0 = Math.floor(fIdx);
+              const i1 = Math.min(pts.length - 1, i0 + 1);
+              const alpha = fIdx - i0;
+
+              const a = pts[i0];
+              const b = pts[i1];
+              pArr[idx * 3] = a.x + (b.x - a.x) * alpha;
+              pArr[idx * 3 + 1] = a.y + (b.y - a.y) * alpha;
+              pArr[idx * 3 + 2] = a.z + (b.z - a.z) * alpha;
+
+              if (a.isSeparated) {
+                cArr[idx * 3] = 0.96; cArr[idx * 3 + 1] = 0.28; cArr[idx * 3 + 2] = 0.28;
+              } else if (a.vorticity > 0.35) {
+                cArr[idx * 3] = 0.45; cArr[idx * 3 + 1] = 0.95; cArr[idx * 3 + 2] = 1.0;
+              } else {
+                cArr[idx * 3] = 0.9; cArr[idx * 3 + 1] = 0.96; cArr[idx * 3 + 2] = 1.0;
+              }
+              idx++;
             }
           }
+          pPosAttr.needsUpdate = true;
+          pColAttr.needsUpdate = true;
         }
-        particlesPointsRef.current.geometry.attributes.position.needsUpdate = true;
-        if (colorAttr) colorAttr.needsUpdate = true;
       }
 
       if (machConeMeshRef.current && machConeMeshRef.current.visible) {
-        const pulse = 1.0 + Math.sin(now * 0.008) * 0.04;
+        const pulse = 1.0 + Math.sin(now * 0.008) * 0.035;
         machConeMeshRef.current.scale.set(pulse, pulse, pulse);
       }
 
@@ -436,18 +543,28 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
     return () => {
       resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
+      renderer.domElement.removeEventListener('webglcontextlost', handleContextLost, false);
       if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
+      if (envTex) envTex.dispose();
+      streakGeo.dispose();
+      streakMat.dispose();
+      pulseGeo.dispose();
+      pulseMat.dispose();
+      coneGeo.dispose();
+      coneMat.dispose();
+      controls.dispose();
       renderer.dispose();
+      rendererRef.current = null;
       mount.innerHTML = '';
     };
   }, []);
 
-  // Dynamic 3D GLB Model Loading on modelType change
+  // Dynamic 3D GLB Model Loading & Real Vertex Surface Field Extraction
   useEffect(() => {
-    if (!aircraftGroupRef.current) return;
+    if (!aircraftGroupRef.current || webglUnavailable) return;
     const aircraftGroup = aircraftGroupRef.current;
+    let cancelled = false;
 
-    // Remove existing GLB / procedural meshes
     if (glbRootRef.current) {
       aircraftGroup.remove(glbRootRef.current);
       glbRootRef.current = null;
@@ -456,6 +573,7 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
       aircraftGroup.remove(proceduralMeshRef.current);
       proceduralMeshRef.current = null;
     }
+    surfaceFieldRef.current = null;
 
     setModelLoading(true);
     setLoadProgress(0);
@@ -464,14 +582,20 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
     const isGlbAvailable = !!GLB_MODEL_REGISTRY[params.modelType];
 
     if (isGlbAvailable) {
-      loadGlbAircraftModel(params.modelType, (pct) => setLoadProgress(pct))
+      loadGlbAircraftModel(params.modelType, (pct) => {
+        if (!cancelled) setLoadProgress(pct);
+      })
         .then(({ root }) => {
-          if (!aircraftGroupRef.current) return;
+          if (cancelled || !aircraftGroupRef.current) return;
+          // Extract real 3D mesh vertices & triangle centroids in pure body frame (before AoA pitch)
+          root.updateMatrixWorld(true);
+          surfaceFieldRef.current = AircraftSurfaceField.fromThreeGroup(root);
+
           glbRootRef.current = root;
           aircraftGroupRef.current.add(root);
+          setSurfaceVersion((v) => v + 1);
           setModelLoading(false);
 
-          // Apply initial shading mode
           if (activeShading === 'cfdHeatmap' || params.show_heatmap) {
             applyCfdPressureHeatmap(root, params.angle_of_attack, telemetry.isStalled);
           } else if (activeShading === 'wireframe') {
@@ -479,8 +603,9 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
           }
         })
         .catch((err) => {
+          if (cancelled) return;
           console.error('Failed to load GLB model, falling back to procedural:', err);
-          setLoadError('Falling back to precision procedural mesh');
+          setLoadError('Falling back to procedural mesh');
           loadProceduralFallback();
         });
     } else {
@@ -488,21 +613,25 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
     }
 
     function loadProceduralFallback() {
-      const meshData = getAircraft3DModel(params.modelType, params.flaps_deg, params.angle_of_attack, params.airspeed_kts, telemetry.lift_N);
+      const meshData = getAircraft3DModel(
+        params.modelType,
+        params.flaps_deg,
+        params.angle_of_attack,
+        params.airspeed_kts,
+        telemetry.lift_N
+      );
       const geom = new THREE.BufferGeometry();
       const positions: number[] = [];
       const colors: number[] = [];
 
       for (const face of meshData.faces) {
-        const c = new THREE.Color(face.baseColor || '#38bdf8');
+        const c = new THREE.Color(face.baseColor || '#1769AA');
         const idx = face.indices;
         for (let i = 1; i < idx.length - 1; i++) {
           const v0 = meshData.vertices[idx[0]];
           const v1 = meshData.vertices[idx[i]];
           const v2 = meshData.vertices[idx[i + 1]];
-          positions.push(v0.x, v0.y, v0.z);
-          positions.push(v1.x, v1.y, v1.z);
-          positions.push(v2.x, v2.y, v2.z);
+          positions.push(v0.x, v0.y, v0.z, v1.x, v1.y, v1.z, v2.x, v2.y, v2.z);
           colors.push(c.r, c.g, c.b, c.r, c.g, c.b, c.r, c.g, c.b);
         }
       }
@@ -514,27 +643,28 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
       const mat = new THREE.MeshStandardMaterial({
         vertexColors: true,
         roughness: 0.35,
-        metalness: 0.5,
+        metalness: 0.45,
         side: THREE.DoubleSide,
       });
 
       const procMesh = new THREE.Mesh(geom, mat);
       proceduralMeshRef.current = procMesh;
       aircraftGroup.add(procMesh);
+
+      surfaceFieldRef.current = AircraftSurfaceField.fromProceduralMesh(meshData);
+      setSurfaceVersion((v) => v + 1);
       setModelLoading(false);
     }
-  }, [params.modelType]);
 
-  // Update Dynamic Aircraft Pitch (AoA + Stall Buffet Shake)
+    return () => {
+      cancelled = true;
+    };
+  }, [params.modelType, webglUnavailable]);
+
+  // Update Dynamic Aircraft Pitch (AoA)
   useEffect(() => {
     if (!aircraftGroupRef.current) return;
-    const now = Date.now();
-    const buffetShake = telemetry.isStalled
-      ? Math.sin(now * 0.04) * 1.5 + Math.cos(now * 0.07) * 0.95
-      : (params.angle_of_attack > 14 ? Math.sin(now * 0.03) * 0.28 : 0);
-
-    const activeAoA = params.angle_of_attack + buffetShake;
-    const pitchRad = (activeAoA * Math.PI) / 180;
+    const pitchRad = (params.angle_of_attack * Math.PI) / 180;
     aircraftGroupRef.current.rotation.z = -pitchRad;
   }, [params.angle_of_attack, telemetry.isStalled]);
 
@@ -553,16 +683,15 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
         if ((child as THREE.Mesh).isMesh) {
           const mesh = child as THREE.Mesh;
           mesh.material = new THREE.MeshPhysicalMaterial({
-            color: 0x00f0ff,
+            color: 0x38bdf8,
             transparent: true,
             opacity: 0.35,
-            roughness: 0.1,
-            metalness: 0.8,
+            roughness: 0.15,
+            metalness: 0.75,
           });
         }
       });
     } else {
-      // Default PBR
       restoreOriginalGlbMaterials(root);
       applyWireframeShading(root, false);
     }
@@ -590,8 +719,7 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
   useEffect(() => {
     if (!afterburnerGroupRef.current) return;
     const config = AIRCRAFT_MODELS[params.modelType];
-    const isReheatActive = config.supersonicCapable && params.airspeed_kts > 480;
-    afterburnerGroupRef.current.visible = isReheatActive;
+    afterburnerGroupRef.current.visible = config.supersonicCapable && params.airspeed_kts > 480;
   }, [params.modelType, params.airspeed_kts]);
 
   // Update Force Vectors Overlay
@@ -606,15 +734,28 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
     );
   }, [telemetry.lift_N, telemetry.drag_N, params.angle_of_attack, params.show_pressure_vectors]);
 
-  // Update Dynamic Smoke Streamlines (Passing around 3D GLB model)
+  // Update Dynamic Smoke Streamlines (Vortex Flow Law + Real Vertex Surface Field)
   useEffect(() => {
-    if (!streamlinesGroupRef.current) return;
-    streamlinesGroupRef.current.clear();
+    const linesGroup = streamlinesGroupRef.current;
+    if (!linesGroup) return;
+
+    // Dispose old geometries & materials cleanly
+    linesGroup.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        (obj as THREE.Mesh).geometry.dispose();
+        const m = (obj as THREE.Mesh).material;
+        if (Array.isArray(m)) m.forEach((x) => x.dispose());
+        else m.dispose();
+      }
+    });
+    linesGroup.clear();
+    tracedCurvesRef.current = [];
+
     if (!params.show_streamlines) return;
 
-    const linesGroup = streamlinesGroupRef.current;
-    
-    // Model-tailored span stations and wingtip vortex positioning
+    const sf = surfaceFieldRef.current;
+    const halfSpan = sf ? sf.halfSpan : (params.modelType === 'airliner' ? 9.0 : params.modelType === 'concorde' ? 4.8 : 6.8);
+
     interface RakeFilament {
       y: number;
       z: number;
@@ -623,83 +764,39 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
 
     const filaments: RakeFilament[] = [];
 
-    if (params.modelType === 'airliner') {
-      // 1. BOEING 787: High-aspect wing, underslung turbofans, raked wingtips
-      const b787Span = 9.2;
-      // High-bypass turbofan nacelles (intake & bypass jet)
-      for (const nz of [-3.6, 3.6]) {
-        filaments.push({ y: -1.45, z: nz, type: 'engine' });
-        filaments.push({ y: -1.15, z: nz, type: 'engine' });
-      }
-      // Fuselage & passenger deck streamlines
-      [-1.2, -0.5, 0.0, 0.5, 1.2].forEach((z) => {
-        [-0.4, 0.35, 1.2, 2.0].forEach((y) => filaments.push({ y, z, type: 'fuselage' }));
+    if (params.modelType === 'cylinder') {
+      [-2.2, -1.5, -0.9, -0.35, 0.0, 0.35, 0.9, 1.5, 2.2].forEach((y) => {
+        [-2.5, 0.0, 2.5].forEach((z) => filaments.push({ y, z, type: 'wing' }));
       });
-      // Swept wing rake
-      [-7.5, -5.5, -3.8, -2.0, 2.0, 3.8, 5.5, 7.5].forEach((z) => {
-        [-0.75, -0.1, 0.55].forEach((y) => filaments.push({ y, z, type: 'wing' }));
+    } else if (params.modelType === 'naca2412' || params.modelType === 'naca0012') {
+      [-0.9, -0.35, 0.05, 0.45, 1.0].forEach((y) => {
+        [-halfSpan * 0.75, -halfSpan * 0.35, 0.0, halfSpan * 0.35, halfSpan * 0.75].forEach((z) =>
+          filaments.push({ y, z, type: 'wing' })
+        );
       });
-      // Raked wingtip vortices
-      [-b787Span * 1.01, -b787Span * 0.98, b787Span * 0.98, b787Span * 1.01].forEach((z) => {
-        [-0.15, 0.2].forEach((y) => filaments.push({ y, z, type: 'vortex' }));
-      });
-    } else if (params.modelType === 'f22') {
-      // 2. F-22 RAPTOR: Diamond delta wing, sharp forebody chines, twin afterburners, canted rudders
-      const f22Span = 6.8;
-      // Forebody chine vortices shed off sharp stealth chines
-      [-1.15, -0.85, 0.85, 1.15].forEach((z) => {
-        filaments.push({ y: 0.15, z, type: 'vortex' });
-        filaments.push({ y: 0.45, z, type: 'vortex' });
-      });
-      // Twin afterburner exhaust plumes
-      for (const az of [-0.67, 0.67]) {
-        filaments.push({ y: -0.38, z: az, type: 'engine' });
-      }
-      // Stealth cockpit & dorsal spine
-      [-0.4, 0.0, 0.4].forEach((z) => {
-        [0.2, 0.85, 1.6].forEach((y) => filaments.push({ y, z, type: 'fuselage' }));
-      });
-      // Diamond delta wing rake
-      [-5.2, -3.6, -2.2, 2.2, 3.6, 5.2].forEach((z) => {
-        [-0.5, 0.1, 0.55].forEach((y) => filaments.push({ y, z, type: 'wing' }));
-      });
-      // Twin canted vertical stabilizers wash
-      [-1.55, 1.55].forEach((z) => {
-        [1.2, 2.1].forEach((y) => filaments.push({ y, z, type: 'vortex' }));
-      });
-      // Wingtip vortices
-      [-f22Span * 1.01, -f22Span * 0.98, f22Span * 0.98, f22Span * 1.01].forEach((z) => {
-        [-0.15, 0.15].forEach((y) => filaments.push({ y, z, type: 'vortex' }));
-      });
-    } else if (params.modelType === 'concorde') {
-      // 3. CONCORDE SST: Slender Gothic ogival delta with primary leading-edge vortex lift
-      const concordeSpan = 4.8;
-      // Slender needle nose & passenger tube
-      [-0.7, 0.0, 0.7].forEach((z) => {
-        [-0.5, 0.2, 0.9, 1.5].forEach((y) => filaments.push({ y, z, type: 'fuselage' }));
-      });
-      // Gothic delta leading-edge vortex sheet (spirals along the sweeping leading edge)
-      [-4.4, -3.6, -2.6, -1.6, 1.6, 2.6, 3.6, 4.4].forEach((z) => {
-        [-0.35, 0.05, 0.45].forEach((y) => filaments.push({ y, z, type: 'vortex' }));
-      });
-      // Twin Olympus engine box intake streams
-      [-1.85, 1.85].forEach((z) => {
-        filaments.push({ y: -0.85, z, type: 'engine' });
-      });
-      // Wingtip vortices
-      [-concordeSpan * 1.01, concordeSpan * 1.01].forEach((z) => {
-        filaments.push({ y: 0.1, z, type: 'vortex' });
-      });
-    } else if (params.modelType === 'cylinder') {
-      // 4. CYLINDER: Symmetrical cross-flow with von Kármán vortex street shedding
-      [-2.4, -1.8, -1.2, -0.6, 0.0, 0.6, 1.2, 1.8, 2.4].forEach((y) => {
-        [-3.0, 0.0, 3.0].forEach((z) => filaments.push({ y, z, type: 'wing' }));
+      [-halfSpan * 0.98, halfSpan * 0.98].forEach((z) => {
+        [-0.1, 0.2].forEach((y) => filaments.push({ y, z, type: 'vortex' }));
       });
     } else {
-      // 5. NACA AIRFOIL SECTION: Pure 2D planar aerodynamic streamtubes
-      [-0.9, -0.4, 0.0, 0.4, 0.9, 1.6].forEach((y) => {
-        [-5.0, -2.5, 0.0, 2.5, 5.0].forEach((z) => filaments.push({ y, z, type: 'wing' }));
+      // Fuselage / canopy rake
+      [-0.8, 0.0, 0.8].forEach((z) => {
+        [-0.35, 0.35, 1.15].forEach((y) => filaments.push({ y, z, type: 'fuselage' }));
       });
+      // Main spanwise wing rake adapted to real vertex span
+      [-0.78, -0.52, -0.28, 0.28, 0.52, 0.78].forEach((frac) => {
+        const z = frac * halfSpan;
+        [-0.55, 0.05, 0.65].forEach((y) => filaments.push({ y, z, type: 'wing' }));
+      });
+      // Wingtip vortex filaments seeded right at actual span tips
+      [-halfSpan * 0.98, -halfSpan * 0.93, halfSpan * 0.93, halfSpan * 0.98].forEach((z) => {
+        [-0.12, 0.18].forEach((y) => filaments.push({ y, z, type: 'vortex' }));
+      });
+      // Engine streams
+      if (params.modelType === 'airliner') {
+        [-3.6, 3.6].forEach((z) => filaments.push({ y: -1.35, z, type: 'engine' }));
+      } else if (params.modelType === 'f22') {
+        [-0.67, 0.67].forEach((z) => filaments.push({ y: -0.38, z, type: 'engine' }));
+      }
     }
 
     const fluid3DParams: Fluid3DParams = {
@@ -709,45 +806,162 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
       mach: telemetry.mach,
       altitude_ft: params.altitude_ft,
       flapsDeg: params.flaps_deg,
+      viscosity: params.viscosity,
       isStalled: telemetry.isStalled,
       cl: telemetry.cl,
       cd: telemetry.cd,
-      timeSec: Date.now() * 0.001,
+      timeSec: performance.now() * 0.001,
+      surfaceField: sf,
     };
 
+    const densityScale = Math.max(0.4, Math.min(1.6, params.smoke_density));
+    const tubularSegments = 96;
+    const radialSegments = 6;
+    const collectedCurves: TracedCurveData[] = [];
+
     filaments.forEach((fil) => {
-      const { y, z, type } = fil;
-      const startPt = { x: -21, y, z };
-      const pts3D = FluidDynamics3D.traceStreamline(startPt, fluid3DParams, 68, 0.64);
+      const pts3D = FluidDynamics3D.traceStreamline({ x: -20, y: fil.y, z: fil.z }, fluid3DParams, 136, 0.28);
+      if (pts3D.length < 6) return;
 
-      if (pts3D.length > 5) {
-        const points = pts3D.map((p) => new THREE.Vector3(p.x, p.y, p.z));
-        const curve = new THREE.CatmullRomCurve3(points);
-        const tubeRadius = type === 'engine' ? 0.065 : (type === 'vortex' ? 0.052 : 0.038);
-        const tubeGeo = new THREE.TubeGeometry(curve, 52, tubeRadius, 6, false);
+      collectedCurves.push({ points: pts3D });
 
-        const isSeparatedFilament = pts3D.some((p) => p.isSeparated);
-        let tubeColor = 0x10b981; // Default laminar emerald
+      const points = pts3D.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+      const curve = new THREE.CatmullRomCurve3(points);
+      const baseRadius = fil.type === 'engine' ? 0.052 : fil.type === 'vortex' ? 0.044 : 0.032;
+      const tubeGeo = new THREE.TubeGeometry(curve, tubularSegments, baseRadius * (0.75 + densityScale * 0.25), radialSegments, false);
 
-        if (isSeparatedFilament || (telemetry.isStalled && y > 0.0)) {
-          tubeColor = 0xef4444; // Stall red
-        } else if (type === 'engine') {
-          tubeColor = 0xf97316; // Engine thrust amber/orange
-        } else if (type === 'vortex') {
-          tubeColor = 0x00f0ff; // Energetic vortex cyan
-        } else if (y > 0.3) {
-          tubeColor = 0x38bdf8; // Upper suction sky blue
+      // Per-vertex coloring along the tube based on real Cp, vorticity & separation
+      const posAttr = tubeGeo.attributes.position;
+      const vColors = new Float32Array(posAttr.count * 3);
+      const ringSize = radialSegments + 1;
+
+      for (let seg = 0; seg <= tubularSegments; seg++) {
+        const sampleIdx = Math.min(pts3D.length - 1, Math.round((seg / tubularSegments) * (pts3D.length - 1)));
+        const pt = pts3D[sampleIdx];
+
+        let r = 0.2, g = 0.82, b = 0.6;
+        if (pt.isSeparated || (telemetry.isStalled && fil.y > 0 && pt.x > -1)) {
+          r = 0.94; g = 0.27; b = 0.27; // Turbulent stall separation
+        } else if (fil.type === 'engine') {
+          r = 0.98; g = 0.55; b = 0.18; // Jet exhaust
+        } else if (pt.vorticity > 0.35 || fil.type === 'vortex') {
+          r = 0.22; g = 0.86; b = 1.0; // Biot-Savart vortex core
+        } else if (pt.pressureCoeff < -0.5) {
+          r = 0.14; g = 0.62; b = 0.96; // Suction acceleration
+        } else if (pt.pressureCoeff > 0.25) {
+          r = 0.96; g = 0.72; b = 0.16; // Compression / ram
         }
 
-        const tubeMat = new THREE.MeshBasicMaterial({
-          color: tubeColor,
-          transparent: true,
-          opacity: type === 'vortex' || type === 'engine' ? 0.88 : 0.65,
-        });
-        linesGroup.add(new THREE.Mesh(tubeGeo, tubeMat));
+        for (let rad = 0; rad < ringSize; rad++) {
+          const vIdx = seg * ringSize + rad;
+          if (vIdx < posAttr.count) {
+            vColors[vIdx * 3] = r;
+            vColors[vIdx * 3 + 1] = g;
+            vColors[vIdx * 3 + 2] = b;
+          }
+        }
+      }
+
+      tubeGeo.setAttribute('color', new THREE.BufferAttribute(vColors, 3));
+
+      const tubeMat = new THREE.MeshBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: Math.min(0.92, (fil.type === 'vortex' ? 0.78 : 0.58) * (0.65 + densityScale * 0.35)),
+      });
+      linesGroup.add(new THREE.Mesh(tubeGeo, tubeMat));
+    });
+
+    tracedCurvesRef.current = collectedCurves;
+  }, [
+    params.show_streamlines,
+    params.modelType,
+    params.angle_of_attack,
+    params.airspeed_kts,
+    params.flaps_deg,
+    params.viscosity,
+    params.smoke_density,
+    telemetry.cl,
+    telemetry.mach,
+    telemetry.isStalled,
+    surfaceVersion,
+  ]);
+
+  // Update 3D Vector Quiver Grid (when params.show_quiver is enabled)
+  useEffect(() => {
+    const qGroup = quiverGroupRef.current;
+    if (!qGroup) return;
+
+    qGroup.traverse((obj) => {
+      if ((obj as THREE.LineSegments).isLineSegments) {
+        (obj as THREE.LineSegments).geometry.dispose();
+        const m = (obj as THREE.LineSegments).material;
+        if (Array.isArray(m)) m.forEach((x) => x.dispose());
+        else m.dispose();
       }
     });
-  }, [params.show_streamlines, params.modelType, params.angle_of_attack, params.airspeed_kts, telemetry.cl, telemetry.isStalled]);
+    qGroup.clear();
+
+    if (!params.show_quiver) return;
+
+    const fluid3DParams: Fluid3DParams = {
+      modelType: params.modelType,
+      aoaDeg: params.angle_of_attack,
+      airspeed_kts: params.airspeed_kts,
+      mach: telemetry.mach,
+      altitude_ft: params.altitude_ft,
+      flapsDeg: params.flaps_deg,
+      viscosity: params.viscosity,
+      isStalled: telemetry.isStalled,
+      cl: telemetry.cl,
+      cd: telemetry.cd,
+      timeSec: performance.now() * 0.001,
+      surfaceField: surfaceFieldRef.current,
+    };
+
+    const positions: number[] = [];
+    const colors: number[] = [];
+
+    for (let x = -9; x <= 11; x += 2.5) {
+      for (let y = -2.0; y <= 3.0; y += 1.25) {
+        for (let z = -6.0; z <= 6.0; z += 3.0) {
+          const vel = FluidDynamics3D.getVelocity({ x, y, z }, fluid3DParams);
+          const s = vel.speed || 1;
+          const len = Math.min(1.6, 0.45 + s * 0.42);
+          const nx = (vel.u / s) * len;
+          const ny = (vel.v / s) * len;
+          const nz = (vel.w / s) * len;
+
+          positions.push(x, y, z, x + nx, y + ny, z + nz);
+
+          let r = 0.22, g = 0.74, b = 0.97;
+          if (vel.isSeparated) { r = 0.94; g = 0.27; b = 0.27; }
+          else if (vel.pressureCoeff < -0.5) { r = 0.14; g = 0.68; b = 0.98; }
+          else if (vel.pressureCoeff > 0.2) { r = 0.96; g = 0.72; b = 0.16; }
+          else { r = 0.20; g = 0.83; b = 0.60; }
+
+          colors.push(r * 0.4, g * 0.4, b * 0.4, r, g, b);
+        }
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    const mat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.75 });
+    qGroup.add(new THREE.LineSegments(geo, mat));
+  }, [
+    params.show_quiver,
+    params.modelType,
+    params.angle_of_attack,
+    params.airspeed_kts,
+    params.flaps_deg,
+    params.viscosity,
+    telemetry.cl,
+    telemetry.mach,
+    telemetry.isStalled,
+    surfaceVersion,
+  ]);
 
   // Camera Presets
   const setCameraPreset = (preset: 'iso' | 'side' | 'top' | 'front' | 'chase') => {
@@ -781,90 +995,120 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
 
   // Snapshot
   const handleTakeSnapshot = () => {
-    if (!rendererRef.current) return;
+    if (!rendererRef.current || !sceneRef.current || !cameraRef.current) return;
+    rendererRef.current.render(sceneRef.current, cameraRef.current);
     const dataUrl = rendererRef.current.domElement.toDataURL('image/png');
     const a = document.createElement('a');
     a.href = dataUrl;
-    a.download = `cfd-${params.modelType}-simulation-${Date.now()}.png`;
+    a.download = `aerolab-${params.modelType}-vortex-flow-${Date.now()}.png`;
     a.click();
   };
 
   const currentMeta = GLB_MODEL_REGISTRY[params.modelType];
 
   return (
-    <div className="relative w-full h-full min-h-[420px] rounded-2xl overflow-hidden border border-cyan-500/30 bg-[#060a12] shadow-[0_0_50px_rgba(6,182,212,0.15)] flex flex-col group select-none">
-      
+    <div className="relative w-full h-full min-h-[420px] rounded-xl overflow-hidden border border-[var(--border)] bg-[#0D1114] shadow-[var(--shadow-tech)] flex flex-col group select-none">
       {/* Three.js Canvas Container */}
       <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
 
+      {/* WebGL2 Unavailable Fallback Overlay */}
+      {webglUnavailable && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0D1114]/95 gap-4 z-30 p-6 text-center">
+          <AlertTriangle className="w-10 h-10 text-amber-400" />
+          <div className="max-w-md flex flex-col gap-1.5">
+            <h3 className="text-sm font-bold text-white">Hardware WebGL2 Unavailable</h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Your browser or GPU driver could not initialize a WebGL2 context. Use the built-in Software 3D Canvas engine for full aerodynamic simulation.
+            </p>
+          </div>
+          {onFallbackToCanvas && (
+            <button
+              onClick={onFallbackToCanvas}
+              className="px-4 py-2 rounded-lg bg-[#1769AA] hover:bg-[#1e7bc4] text-white font-semibold text-xs transition-colors"
+            >
+              Switch to Canvas 3D Engine
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Model Loading Spinner / Progress */}
-      {modelLoading && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/85 backdrop-blur-md gap-3.5 z-20">
-          <div className="w-14 h-14 rounded-full border-2 border-cyan-500/20 border-t-cyan-400 animate-spin shadow-[0_0_20px_rgba(6,182,212,0.4)]" />
+      {modelLoading && !webglUnavailable && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0D1114]/90 gap-3.5 z-20">
+          <div className="w-12 h-12 rounded-full border-2 border-slate-700 border-t-[#38bdf8] animate-spin" />
           <div className="flex flex-col items-center gap-1.5">
-            <span className="text-sm font-semibold text-cyan-200 font-mono tracking-wide">
-              Loading {currentMeta ? currentMeta.name : '3D CAD Model'}... {loadProgress}%
+            <span className="text-sm font-semibold text-slate-100 font-mono">
+              Loading {currentMeta ? currentMeta.name : '3D CAD Model'} · {loadProgress}%
             </span>
-            <div className="w-48 h-2 rounded-full bg-slate-800 overflow-hidden border border-cyan-500/30">
+            <div className="w-48 h-1.5 rounded-full bg-[#151A1E] overflow-hidden border border-slate-700">
               <div
-                className="h-full bg-gradient-to-r from-cyan-500 via-sky-400 to-emerald-400 transition-all duration-200"
+                className="h-full bg-[#1769AA] transition-all duration-200"
                 style={{ width: `${Math.max(8, loadProgress)}%` }}
               />
             </div>
             <span className="text-[11px] text-slate-400 font-mono">
-              {currentMeta ? `${currentMeta.fileSizeLabel} · ${currentMeta.meshCountLabel}` : 'Parsing 3D CAD geometry'}
+              {currentMeta ? `${currentMeta.fileSizeLabel} · ${currentMeta.meshCountLabel}` : 'Building vertex flow field'}
             </span>
           </div>
         </div>
       )}
 
-      {/* Top Header Floating Status Pill */}
+      {loadError && !modelLoading && (
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 px-3 py-1 rounded-lg bg-[#151A1E] border border-amber-500/40 text-amber-300 text-[11px] font-mono z-10 pointer-events-none">
+          {loadError}
+        </div>
+      )}
+
+      {/* Top Header Overlay (Solid #151A1E surface, zero backdrop-blur over WebGL) */}
       <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none z-10">
-        <div className="flex items-center gap-2 bg-slate-950/80 backdrop-blur-md px-3.5 py-1.5 rounded-2xl border border-cyan-500/30 pointer-events-auto shadow-lg">
-          <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_#38bdf8]" />
-          <span className="text-xs font-bold text-white tracking-wide">
-            CFD 3D Wind Tunnel
-          </span>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">
+        <div className="flex items-center gap-2 bg-[#151A1E]/95 px-3 py-1.5 rounded-lg border border-slate-700/80 pointer-events-auto text-xs">
+          <span className="font-semibold text-slate-100 whitespace-nowrap">
             {currentMeta ? currentMeta.name : AIRCRAFT_MODELS[params.modelType].name}
           </span>
+          <span className="text-slate-500" aria-hidden="true">·</span>
+          <span className="text-[11px] font-mono text-sky-300 whitespace-nowrap">
+            Biot-Savart Vortex + Vertex Flow
+          </span>
           {telemetry.isStalled && (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-red-500/20 text-red-300 border border-red-500/40 flex items-center gap-1 animate-pulse">
-              <AlertTriangle className="w-3 h-3" />
-              STALL
-            </span>
+            <>
+              <span className="text-slate-500" aria-hidden="true">·</span>
+              <span className="text-[11px] font-bold text-red-400 flex items-center gap-1 whitespace-nowrap">
+                <AlertTriangle className="w-3 h-3" />
+                STALL
+              </span>
+            </>
           )}
         </div>
 
         {/* Top-Right Quick Action Toolbar */}
-        <div className="flex items-center gap-2 pointer-events-auto">
+        <div className="flex items-center gap-1.5 pointer-events-auto">
           {onOpenModelInspector && (
             <button
               onClick={onOpenModelInspector}
-              className="px-3 py-1.5 rounded-xl bg-slate-950/80 hover:bg-slate-900 border border-cyan-500/40 hover:border-cyan-400 text-cyan-200 text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-cyan-950/50"
+              className="px-3 py-1.5 rounded-lg bg-[#151A1E]/95 hover:bg-slate-800 border border-slate-700/80 text-slate-100 text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
               title="Open 3D CAD Asset Inspector"
             >
-              <Box className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+              <Box className="w-3.5 h-3.5 text-sky-400" />
               <span className="hidden sm:inline">3D Inspector</span>
             </button>
           )}
 
           <button
             onClick={handleTakeSnapshot}
-            className="p-2 rounded-xl bg-slate-950/80 hover:bg-slate-900 border border-cyan-500/30 text-slate-300 hover:text-white transition-all shadow-md"
+            className="p-2 rounded-lg bg-[#151A1E]/95 hover:bg-slate-800 border border-slate-700/80 text-slate-200 hover:text-white transition-colors"
             title="Save CFD PNG Snapshot"
           >
-            <Camera className="w-3.5 h-3.5 text-cyan-400" />
+            <Camera className="w-3.5 h-3.5 text-sky-400" />
           </button>
 
-          <div className="flex items-center bg-slate-950/80 backdrop-blur-md p-1 rounded-2xl border border-cyan-500/30">
+          <div className="flex items-center bg-[#151A1E]/95 p-0.5 rounded-lg border border-slate-700/80">
             <button
               onClick={() => onParamChange('audio_enabled', !params.audio_enabled)}
-              className="p-1.5 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/80 transition-all"
+              className="p-1.5 rounded-md text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
               title={params.audio_enabled ? 'Mute Wind Sound' : 'Enable Wind Audio'}
             >
               {params.audio_enabled ? (
-                <Volume2 className="w-3.5 h-3.5 text-cyan-400" />
+                <Volume2 className="w-3.5 h-3.5 text-sky-400" />
               ) : (
                 <VolumeX className="w-3.5 h-3.5" />
               )}
@@ -873,7 +1117,7 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
             {onFallbackToCanvas && (
               <button
                 onClick={onFallbackToCanvas}
-                className="px-2.5 py-1 text-[11px] font-semibold text-slate-400 hover:text-cyan-200 transition-colors border-l border-white/10 ml-1"
+                className="px-2.5 py-1 text-[11px] font-medium text-slate-300 hover:text-white transition-colors border-l border-slate-700/80 ml-0.5 whitespace-nowrap shrink-0"
                 title="Switch to Canvas 3D Engine"
               >
                 Canvas 3D
@@ -883,33 +1127,32 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
         </div>
       </div>
 
-      {/* Bottom Floating Controls Overlay */}
-      <div className="absolute bottom-3 left-3 right-3 flex flex-wrap items-center justify-between gap-2 pointer-events-none z-10">
-        
-        {/* Left: Camera Presets & Turntable */}
-        <div className="flex items-center gap-1.5 bg-slate-950/85 backdrop-blur-md p-1.5 rounded-2xl border border-white/10 pointer-events-auto shadow-lg">
+      {/* Bottom Floating Controls Dock */}
+      <div className="absolute bottom-2.5 left-2.5 right-2.5 flex flex-wrap items-center justify-between gap-1.5 pointer-events-none z-10">
+        {/* Camera Presets & Turntable */}
+        <div className="flex items-center gap-0.5 sm:gap-1 bg-[#151A1E]/95 p-1 rounded-lg border border-slate-700/80 pointer-events-auto">
           {(['iso', 'side', 'top', 'front', 'chase'] as const).map((p) => (
             <button
               key={p}
               onClick={() => setCameraPreset(p)}
-              className={`px-2.5 py-1 rounded-xl text-xs font-semibold capitalize transition-all ${
+              className={`px-2 sm:px-2.5 py-1 rounded-md text-[11px] sm:text-xs font-medium capitalize transition-colors whitespace-nowrap shrink-0 ${
                 activePreset === p && !isAutoOrbit
-                  ? 'bg-cyan-500/30 text-cyan-200 border border-cyan-400/40 shadow-sm'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-[#1769AA] text-white'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/70'
               }`}
             >
               {p}
             </button>
           ))}
 
-          <div className="w-px h-4 bg-white/15 mx-0.5" />
+          <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
           <button
             onClick={() => setIsAutoOrbit(!isAutoOrbit)}
-            className={`px-2.5 py-1 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all ${
+            className={`px-2 sm:px-2.5 py-1 rounded-md text-[11px] sm:text-xs font-medium flex items-center gap-1 transition-colors whitespace-nowrap shrink-0 ${
               isAutoOrbit
-                ? 'bg-cyan-500/30 text-cyan-200 border border-cyan-400/40'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-[#1769AA] text-white'
+                : 'text-slate-300 hover:text-white hover:bg-slate-800/70'
             }`}
             title="Toggle 360 Turntable Orbit"
           >
@@ -918,68 +1161,65 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
           </button>
         </div>
 
-        {/* Right: Shading & Heatmap Overlays */}
-        <div className="flex items-center gap-1.5 bg-slate-950/85 backdrop-blur-md p-1.5 rounded-2xl border border-white/10 pointer-events-auto shadow-lg">
-          <div className="flex items-center gap-1">
-            {(
-              [
-                { id: 'pbr', label: 'PBR' },
-                { id: 'cfdHeatmap', label: 'CFD Heat' },
-                { id: 'wireframe', label: 'Wire' },
-                { id: 'xray', label: 'X-Ray' },
-              ] as const
-            ).map((s) => (
-              <button
-                key={s.id}
-                onClick={() => {
-                  setActiveShading(s.id);
-                  if (s.id === 'cfdHeatmap') onParamChange('show_heatmap', true);
-                  else if (s.id === 'pbr') onParamChange('show_heatmap', false);
-                }}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
-                  activeShading === s.id
-                    ? 'bg-cyan-500/30 text-cyan-100 border border-cyan-400/40'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
+        {/* Shading & Heatmap Overlays */}
+        <div className="flex items-center gap-0.5 sm:gap-1 bg-[#151A1E]/95 p-1 rounded-lg border border-slate-700/80 pointer-events-auto">
+          {(
+            [
+              { id: 'pbr', label: 'PBR' },
+              { id: 'cfdHeatmap', label: 'CFD Heat' },
+              { id: 'wireframe', label: 'Wire' },
+              { id: 'xray', label: 'X-Ray' },
+            ] as const
+          ).map((s) => (
+            <button
+              key={s.id}
+              onClick={() => {
+                setActiveShading(s.id);
+                if (s.id === 'cfdHeatmap') onParamChange('show_heatmap', true);
+                else if (s.id === 'pbr') onParamChange('show_heatmap', false);
+              }}
+              className={`px-2 sm:px-2.5 py-1 rounded-md text-[11px] sm:text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+                activeShading === s.id
+                  ? 'bg-[#1769AA] text-white'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/70'
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Floating Spatial Force Labels */}
+      {/* Floating Spatial Force Readout */}
       {params.show_pressure_vectors && (
-        <div className="absolute top-14 left-4 pointer-events-none z-10 flex flex-col gap-1 font-mono text-xs">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950/80 backdrop-blur-md border border-emerald-500/40 text-emerald-300">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#10b981]" />
-            <span>LIFT: {(telemetry.lift_N / 1000).toFixed(1)} kN</span>
+        <div className="absolute top-14 left-3 pointer-events-none z-10 flex flex-col gap-1 font-mono tabular-nums text-[11px] bg-[#151A1E]/92 px-3 py-2 rounded-lg border border-slate-700/80">
+          <div className="flex items-center justify-between gap-3 text-emerald-300">
+            <span>LIFT</span>
+            <span className="font-semibold">{(telemetry.lift_N / 1000).toFixed(1)} kN</span>
           </div>
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950/80 backdrop-blur-md border border-red-500/40 text-red-300">
-            <span className="w-2 h-2 rounded-full bg-red-400 shadow-[0_0_6px_#ef4444]" />
-            <span>DRAG: {(telemetry.drag_N / 1000).toFixed(1)} kN</span>
+          <div className="flex items-center justify-between gap-3 text-amber-300">
+            <span>DRAG</span>
+            <span className="font-semibold">{(telemetry.drag_N / 1000).toFixed(1)} kN</span>
           </div>
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950/80 backdrop-blur-md border border-cyan-500/40 text-cyan-300">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_6px_#00f0ff]" />
-            <span>L/D: {telemetry.ldRatio.toFixed(2)}</span>
+          <div className="flex items-center justify-between gap-3 text-sky-300">
+            <span>L/D</span>
+            <span className="font-semibold">{telemetry.ldRatio.toFixed(2)}</span>
           </div>
         </div>
       )}
 
       {/* CFD Pressure Heatmap Legend Overlay */}
       {(activeShading === 'cfdHeatmap' || params.show_heatmap) && (
-        <div className="absolute top-14 right-4 pointer-events-none z-10 bg-slate-950/85 backdrop-blur-md px-3 py-2 rounded-xl border border-cyan-500/30 flex flex-col gap-1 text-[10px] font-mono shadow-xl">
-          <span className="text-cyan-200 font-bold tracking-wider">Cp PRESSURE COEFFICIENT</span>
-          <div className="w-32 h-2.5 rounded-full bg-gradient-to-r from-blue-600 via-cyan-400 via-emerald-400 via-amber-400 to-red-600 border border-white/20" />
+        <div className="absolute top-14 right-3 pointer-events-none z-10 bg-[#151A1E]/95 px-3 py-2 rounded-lg border border-slate-700/80 flex flex-col gap-1 text-[10px] font-mono">
+          <span className="text-slate-200 font-semibold tracking-wider">Cp PRESSURE COEFFICIENT</span>
+          <div className="w-32 h-2 rounded-full bg-gradient-to-r from-blue-600 via-cyan-400 via-emerald-400 via-amber-400 to-red-600 border border-slate-700" />
           <div className="flex justify-between text-slate-300">
-            <span>-2.5 (Suction)</span>
+            <span>-2.5</span>
             <span>0</span>
-            <span>+1.0 (Ram)</span>
+            <span>+1.0</span>
           </div>
         </div>
       )}
-
     </div>
   );
 };

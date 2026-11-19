@@ -12,6 +12,8 @@ import {
   createAeroForceVectorsGroup,
   updateAeroForceVectors
 } from '../utils/aircraftGlbModels';
+import { getAircraft3DModel, computeFaceNormal, Vertex3D } from '../utils/aircraft3DGeometry';
+import { createSafeWebGLRenderer } from '../utils/webglSupport';
 import { 
   X, 
   RotateCw, 
@@ -53,6 +55,9 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
   const forceVectorsRef = useRef<THREE.Group | null>(null);
   const animFrameIdRef = useRef<number | null>(null);
   const lightsGroupRef = useRef<THREE.Group | null>(null);
+  const fallbackCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fallbackCamRef = useRef({ theta: 0.78, phi: 0.35, distance: 16 });
+  const fallbackDragRef = useRef({ dragging: false, lastX: 0, lastY: 0 });
 
   // Active inspected model
   const [selectedModel, setSelectedModel] = useState<AircraftModelType>(activeModelType);
@@ -61,9 +66,12 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
   const [loadingProgress, setLoadingProgress] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [webglUnavailable, setWebglUnavailable] = useState<boolean>(false);
 
   // Inspector controls
   const [isAutoSpin, setIsAutoSpin] = useState<boolean>(true);
+  const isAutoSpinRef = useRef<boolean>(true);
+  isAutoSpinRef.current = isAutoSpin;
   const [shadingMode, setShadingMode] = useState<'pbr' | 'cfdHeatmap' | 'wireframe' | 'xray'>('pbr');
   const [lightingPreset, setLightingPreset] = useState<'tunnel' | 'studio' | 'sunset' | 'cyber'>('tunnel');
   const [showForceVectors, setShowForceVectors] = useState<boolean>(true);
@@ -93,7 +101,7 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
     // 1. Scene
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.background = new THREE.Color(0x060a12);
+    scene.background = new THREE.Color(0x0d1114);
 
     // 2. Camera
     const width = mount.clientWidth || 800;
@@ -102,16 +110,34 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
     camera.position.set(16, 8, 16);
     cameraRef.current = camera;
 
-    // 3. Renderer
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    // 3. Renderer (safely probed to prevent uncaught WebGL context errors)
+    const renderer = createSafeWebGLRenderer({
+      antialias: true,
+      alpha: true,
+      preserveDrawingBuffer: true,
+    });
+    if (!renderer) {
+      setWebglUnavailable(true);
+      setIsLoading(false);
+      return;
+    }
+
+    setWebglUnavailable(false);
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.35;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     mount.innerHTML = '';
     mount.appendChild(renderer.domElement);
     rendererRef.current = renderer;
+
+    const handleContextLost = (e: Event) => {
+      e.preventDefault();
+      setWebglUnavailable(true);
+      setIsLoading(false);
+    };
+    renderer.domElement.addEventListener('webglcontextlost', handleContextLost, false);
 
     // 4. OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -178,7 +204,7 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
     const animate = () => {
       animFrameIdRef.current = requestAnimationFrame(animate);
 
-      if (isAutoSpin && modelRootRef.current) {
+      if (isAutoSpinRef.current && modelRootRef.current) {
         modelRootRef.current.rotation.y += 0.005;
       }
 
@@ -192,6 +218,7 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
       if (!mount || !renderer || !camera) return;
       const w = mount.clientWidth;
       const h = mount.clientHeight;
+      if (w === 0 || h === 0) return;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
@@ -200,16 +227,212 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      renderer.domElement.removeEventListener('webglcontextlost', handleContextLost, false);
       if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
+      controls.dispose();
       renderer.dispose();
+      rendererRef.current = null;
       mount.innerHTML = '';
     };
   }, [isOpen]);
 
+  // Software 3D Canvas Fallback Renderer when WebGL2 is unavailable
+  useEffect(() => {
+    if (!isOpen || !webglUnavailable) return;
+    const canvas = fallbackCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const proc = getAircraft3DModel(selectedModel, 0, inspectorAoA, 350, 1.2e6);
+    setMeshCount(proc.faces.length);
+    setVertexCount(proc.vertices.length);
+    setIsLoading(false);
+
+    let rafId = 0;
+
+    const resize = () => {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = Math.max(1, Math.floor(rect.width * dpr));
+      const h = Math.max(1, Math.floor(rect.height * dpr));
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+      }
+    };
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(canvas);
+
+    const draw = () => {
+      const w = canvas.width;
+      const h = canvas.height;
+      const cx = w / 2;
+      const cy = h / 2;
+      const focal = Math.min(w, h) * 1.25;
+      const cam = fallbackCamRef.current;
+
+      if (isAutoSpinRef.current && !fallbackDragRef.current.dragging) {
+        cam.theta += 0.008;
+      }
+
+      const camX = cam.distance * Math.cos(cam.phi) * Math.sin(cam.theta);
+      const camY = cam.distance * Math.sin(cam.phi);
+      const camZ = cam.distance * Math.cos(cam.phi) * Math.cos(cam.theta);
+
+      const fx = -camX;
+      const fy = -camY;
+      const fz = -camZ;
+      const fLen = Math.hypot(fx, fy, fz) || 1;
+      const fNorm = { x: fx / fLen, y: fy / fLen, z: fz / fLen };
+
+      const rx = -fNorm.z;
+      const rz = fNorm.x;
+      const rLen = Math.hypot(rx, rz) || 1;
+      const rNorm = { x: rx / rLen, y: 0, z: rz / rLen };
+
+      const ux = rNorm.y * fNorm.z - rNorm.z * fNorm.y;
+      const uy = rNorm.z * fNorm.x - rNorm.x * fNorm.z;
+      const uz = rNorm.x * fNorm.y - rNorm.y * fNorm.x;
+      const uLen = Math.hypot(ux, uy, uz) || 1;
+      const uNorm = { x: ux / uLen, y: uy / uLen, z: uz / uLen };
+
+      const project = (v: Vertex3D) => {
+        const vx = (v.x - camX) * rNorm.x + (v.y - camY) * rNorm.y + (v.z - camZ) * rNorm.z;
+        const vy = (v.x - camX) * uNorm.x + (v.y - camY) * uNorm.y + (v.z - camZ) * uNorm.z;
+        const vz = (v.x - camX) * fNorm.x + (v.y - camY) * fNorm.y + (v.z - camZ) * fNorm.z;
+        if (vz <= 0.2) return null;
+        return { x: cx + (vx * focal) / vz, y: cy - (vy * focal) / vz, depth: vz };
+      };
+
+      ctx.fillStyle = '#0D1114';
+      ctx.fillRect(0, 0, w, h);
+
+      // Pedestal grid
+      ctx.strokeStyle = 'rgba(0, 240, 255, 0.16)';
+      ctx.lineWidth = 1;
+      for (let g = -12; g <= 12; g += 3) {
+        const a1 = project({ x: g, y: -3.5, z: -12 });
+        const a2 = project({ x: g, y: -3.5, z: 12 });
+        if (a1 && a2) {
+          ctx.beginPath();
+          ctx.moveTo(a1.x, a1.y);
+          ctx.lineTo(a2.x, a2.y);
+          ctx.stroke();
+        }
+        const b1 = project({ x: -12, y: -3.5, z: g });
+        const b2 = project({ x: 12, y: -3.5, z: g });
+        if (b1 && b2) {
+          ctx.beginPath();
+          ctx.moveTo(b1.x, b1.y);
+          ctx.lineTo(b2.x, b2.y);
+          ctx.stroke();
+        }
+      }
+
+      const pitchRad = (inspectorAoA * Math.PI) / 180;
+      const cosP = Math.cos(pitchRad);
+      const sinP = Math.sin(pitchRad);
+
+      const verts = proc.vertices.map((v) => ({
+        x: v.x * cosP + v.y * sinP,
+        y: -v.x * sinP + v.y * cosP,
+        z: v.z,
+      }));
+      const projected = verts.map(project);
+
+      const faces = proc.faces
+        .map((face) => {
+          const norm = computeFaceNormal(verts, face.indices);
+          let avgZ = 0;
+          let valid = true;
+          for (const idx of face.indices) {
+            const p = projected[idx];
+            if (!p) {
+              valid = false;
+              break;
+            }
+            avgZ += p.depth;
+          }
+          return { face, norm, avgZ: avgZ / face.indices.length, valid };
+        })
+        .filter((f) => f.valid)
+        .sort((a, b) => b.avgZ - a.avgZ);
+
+      for (const { face, norm } of faces) {
+        const pts = face.indices.map((idx) => projected[idx]!);
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.closePath();
+
+        if (shadingMode === 'wireframe') {
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+        } else if (shadingMode === 'xray') {
+          ctx.fillStyle = 'rgba(0, 240, 255, 0.16)';
+          ctx.strokeStyle = 'rgba(0, 240, 255, 0.45)';
+          ctx.lineWidth = 0.8;
+          ctx.fill();
+          ctx.stroke();
+        } else {
+          let color = face.baseColor || '#38bdf8';
+          if (shadingMode === 'cfdHeatmap') {
+            if (isStalled) color = '#ef4444';
+            else if (norm.x < -0.25) color = '#f97316';
+            else if (norm.y > 0.1) color = '#00f0ff';
+            else color = '#10b981';
+          }
+          const light = Math.max(0.35, 0.45 + 0.55 * Math.max(0, norm.y * 0.85 - norm.x * 0.3));
+          ctx.fillStyle = color;
+          ctx.fill();
+          ctx.fillStyle = `rgba(0,0,0,${Math.max(0, 1 - light) * 0.45})`;
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(15, 23, 42, 0.45)';
+          ctx.lineWidth = 0.8;
+          ctx.stroke();
+        }
+      }
+
+      if (showForceVectors) {
+        const origin = project({ x: 0, y: 0, z: 0 });
+        const liftEnd = project({ x: 0, y: Math.max(-1.5, Math.min(4.5, Math.sin(pitchRad + 0.1) * 4.5)), z: 0 });
+        const dragEnd = project({ x: 2.2 + Math.abs(Math.sin(pitchRad)) * 2.5, y: 0, z: 0 });
+        if (origin && liftEnd) {
+          ctx.strokeStyle = '#10b981';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(origin.x, origin.y);
+          ctx.lineTo(liftEnd.x, liftEnd.y);
+          ctx.stroke();
+        }
+        if (origin && dragEnd) {
+          ctx.strokeStyle = '#ef4444';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(origin.x, origin.y);
+          ctx.lineTo(dragEnd.x, dragEnd.y);
+          ctx.stroke();
+        }
+      }
+
+      rafId = requestAnimationFrame(draw);
+    };
+
+    draw();
+    return () => {
+      cancelAnimationFrame(rafId);
+      ro.disconnect();
+    };
+  }, [isOpen, webglUnavailable, selectedModel, inspectorAoA, isStalled, shadingMode, showForceVectors]);
+
   // Load Selected GLB Model
   useEffect(() => {
-    if (!isOpen || !sceneRef.current) return;
+    if (!isOpen || webglUnavailable || !sceneRef.current) return;
     const scene = sceneRef.current;
+    let cancelled = false;
 
     // Clear old model
     if (modelRootRef.current) {
@@ -221,8 +444,11 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
     setLoadingProgress(0);
     setLoadError(null);
 
-    loadGlbAircraftModel(selectedModel, (pct) => setLoadingProgress(pct))
-      .then(({ root, metadata }) => {
+    loadGlbAircraftModel(selectedModel, (pct) => {
+      if (!cancelled) setLoadingProgress(pct);
+    })
+      .then(({ root }) => {
+        if (cancelled) return;
         modelRootRef.current = root;
         scene.add(root);
 
@@ -251,11 +477,16 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
         setIsLoading(false);
       })
       .catch((err) => {
+        if (cancelled) return;
         console.error('Error loading GLB in inspector:', err);
         setLoadError(`Failed to load 3D CAD asset for ${selectedModel}.`);
         setIsLoading(false);
       });
-  }, [isOpen, selectedModel]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, selectedModel, webglUnavailable]);
 
   // Update AoA Pitch & Heatmap in Inspector
   useEffect(() => {
@@ -350,8 +581,9 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
 
   // Take PNG Snapshot
   const handleTakeSnapshot = () => {
-    if (!rendererRef.current) return;
-    const dataUrl = rendererRef.current.domElement.toDataURL('image/png');
+    const canvasEl = webglUnavailable ? fallbackCanvasRef.current : rendererRef.current?.domElement;
+    if (!canvasEl) return;
+    const dataUrl = canvasEl.toDataURL('image/png');
     const a = document.createElement('a');
     a.href = dataUrl;
     a.download = `${selectedModel}-3d-cad-inspector-${Date.now()}.png`;
@@ -360,6 +592,10 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
 
   // Reset Camera View
   const handleResetCamera = () => {
+    if (webglUnavailable) {
+      fallbackCamRef.current = { theta: 0.78, phi: 0.35, distance: 16 };
+      return;
+    }
     if (!cameraRef.current || !controlsRef.current) return;
     cameraRef.current.position.set(16, 8, 16);
     controlsRef.current.target.set(0, 0, 0);
@@ -371,30 +607,25 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
   const currentMeta = GLB_MODEL_REGISTRY[selectedModel];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/85 backdrop-blur-xl animate-fade-in">
-      <div className="relative w-full max-w-6xl h-[92vh] bg-slate-900/90 border border-cyan-500/40 rounded-3xl shadow-[0_0_60px_rgba(6,182,212,0.25)] flex flex-col overflow-hidden text-slate-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-[#0D1114]/65 backdrop-blur-sm">
+      <div className="relative w-full max-w-6xl h-[92vh] bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-2xl flex flex-col overflow-hidden text-[var(--text)]">
         
         {/* Top Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-cyan-500/20 bg-slate-950/70">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)] bg-[var(--surface)]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-cyan-950/80 border border-cyan-400/50 flex items-center justify-center text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.4)]">
-              <Box className="w-5 h-5 animate-pulse" />
+            <div className="w-10 h-10 rounded-xl bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA]">
+              <Box className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-bold font-sans tracking-wide text-white">
+                <h2 className="text-base sm:text-lg font-bold font-sans tracking-tight text-[#161A1D]">
                   3D CAD Asset Inspector
                 </h2>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">
-                  GLTF 2.0 Binary
+                <span className="text-[11px] font-mono text-[#1769AA] font-semibold">
+                  GLTF 2.0{currentMeta ? ` · ${currentMeta.fileSizeLabel}` : ''}
                 </span>
-                {currentMeta && (
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-                    {currentMeta.fileSizeLabel}
-                  </span>
-                )}
               </div>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-[#5C6670]">
                 {currentMeta ? currentMeta.sourceCredit : 'High-fidelity aerodynamic CAD meshes'}
               </p>
             </div>
@@ -403,15 +634,15 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={handleTakeSnapshot}
-              className="p-2 sm:px-3 sm:py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 border border-white/10 hover:border-cyan-400/40 transition-all flex items-center gap-1.5 text-xs font-semibold"
+              className="p-2 sm:px-3 sm:py-1.5 rounded-lg bg-[var(--bg)] hover:bg-[var(--accent-light)] text-[#161A1D] hover:text-[#1769AA] border border-[var(--border)] hover:border-[#1769AA] transition-colors flex items-center gap-1.5 text-xs font-semibold"
               title="Save PNG Snapshot"
             >
-              <Camera className="w-4 h-4 text-cyan-400" />
+              <Camera className="w-4 h-4 text-[#1769AA]" />
               <span className="hidden sm:inline">Snapshot</span>
             </button>
             <button
               onClick={onClose}
-              className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors border border-white/5"
+              className="p-2 rounded-lg text-[#5C6670] hover:text-[#161A1D] hover:bg-[var(--bg)] transition-colors border border-[var(--border)]"
               title="Close modal"
             >
               <X className="w-5 h-5" />
@@ -420,10 +651,10 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
         </div>
 
         {/* Model Tabs Bar */}
-        <div className="px-6 py-2.5 bg-slate-950/50 border-b border-cyan-500/15 flex items-center gap-2 overflow-x-auto custom-scrollbar">
-          <span className="text-xs font-mono font-bold text-slate-400 mr-2 flex items-center gap-1">
-            <Plane className="w-3.5 h-3.5 text-cyan-400" />
-            SELECT MODEL:
+        <div className="px-6 py-2.5 bg-[var(--bg)] border-b border-[var(--border)] flex items-center gap-2 overflow-x-auto custom-scrollbar">
+          <span className="text-xs font-mono font-bold text-[#5C6670] mr-2 flex items-center gap-1 shrink-0">
+            <Plane className="w-3.5 h-3.5 text-[#1769AA]" />
+            MODEL:
           </span>
           {[
             { id: 'f22', label: 'F-22 Raptor', tag: 'Stealth Fighter' },
@@ -437,15 +668,15 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
                 setSelectedModel(m.id as AircraftModelType);
                 if (onSelectModel) onSelectModel(m.id as AircraftModelType);
               }}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all border ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors border shrink-0 ${
                 selectedModel === m.id
-                  ? 'bg-cyan-950/80 text-cyan-200 border-cyan-400/70 shadow-[0_0_12px_rgba(6,182,212,0.3)]'
-                  : 'bg-slate-900/60 text-slate-400 border-slate-800 hover:text-white hover:border-slate-700'
+                  ? 'bg-[#1769AA] text-white border-[#1769AA]'
+                  : 'bg-[var(--surface)] text-[#5C6670] border-[var(--border)] hover:text-[#161A1D]'
               }`}
             >
               <span>{m.label}</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-black/40 text-cyan-400/80">
-                {m.tag}
+              <span className={`text-[10px] font-mono ${selectedModel === m.id ? 'text-white/80' : 'text-[#5C6670]'}`}>
+                · {m.tag}
               </span>
             </button>
           ))}
@@ -454,21 +685,55 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
         {/* Main Body */}
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
           
-          {/* Left Viewport (3D Canvas) */}
-          <div className="relative flex-1 h-full min-h-[360px] bg-gradient-to-b from-[#050810] to-[#0a1122]">
-            <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+          {/* Left Viewport (3D Canvas — --dark: #0D1114) */}
+          <div className="relative flex-1 h-full min-h-[360px] bg-[#0D1114]">
+            {webglUnavailable ? (
+              <>
+                <canvas
+                  ref={fallbackCanvasRef}
+                  onPointerDown={(e) => {
+                    fallbackDragRef.current = { dragging: true, lastX: e.clientX, lastY: e.clientY };
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  }}
+                  onPointerMove={(e) => {
+                    if (!fallbackDragRef.current.dragging) return;
+                    const dx = e.clientX - fallbackDragRef.current.lastX;
+                    const dy = e.clientY - fallbackDragRef.current.lastY;
+                    fallbackDragRef.current.lastX = e.clientX;
+                    fallbackDragRef.current.lastY = e.clientY;
+                    fallbackCamRef.current.theta -= dx * 0.008;
+                    fallbackCamRef.current.phi = Math.max(-1.4, Math.min(1.4, fallbackCamRef.current.phi + dy * 0.008));
+                  }}
+                  onPointerUp={(e) => {
+                    fallbackDragRef.current.dragging = false;
+                    try {
+                      e.currentTarget.releasePointerCapture(e.pointerId);
+                    } catch {}
+                  }}
+                  onWheel={(e) => {
+                    fallbackCamRef.current.distance = Math.max(7, Math.min(30, fallbackCamRef.current.distance + e.deltaY * 0.015));
+                  }}
+                  className="w-full h-full block cursor-grab active:cursor-grabbing"
+                />
+                <div className="absolute top-4 left-4 px-3 py-1.5 rounded-lg bg-[#151A1E]/95 border border-amber-500/50 text-amber-200 text-[11px] font-mono pointer-events-none">
+                  Software 3D Canvas Fallback (WebGL2 unavailable)
+                </div>
+              </>
+            ) : (
+              <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+            )}
 
             {/* Loading Indicator */}
-            {isLoading && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-md gap-4 z-10">
-                <div className="w-14 h-14 rounded-full border-2 border-cyan-500/20 border-t-cyan-400 animate-spin shadow-[0_0_20px_rgba(6,182,212,0.4)]" />
+            {isLoading && !webglUnavailable && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0D1114]/90 gap-4 z-10">
+                <div className="w-12 h-12 rounded-full border-2 border-slate-700 border-t-[#38bdf8] animate-spin" />
                 <div className="flex flex-col items-center gap-1.5">
-                  <span className="text-sm font-semibold text-cyan-100 font-mono">
-                    Loading {currentMeta ? currentMeta.name : '3D CAD Model'}... {loadingProgress}%
+                  <span className="text-sm font-semibold text-slate-100 font-mono">
+                    Loading {currentMeta ? currentMeta.name : '3D CAD Model'} · {loadingProgress}%
                   </span>
-                  <div className="w-48 h-2 rounded-full bg-slate-800 overflow-hidden border border-cyan-500/30">
+                  <div className="w-48 h-1.5 rounded-full bg-[#151A1E] overflow-hidden border border-slate-700">
                     <div 
-                      className="h-full bg-gradient-to-r from-cyan-500 via-sky-400 to-emerald-400 transition-all duration-200"
+                      className="h-full bg-[#1769AA] transition-all duration-200"
                       style={{ width: `${Math.max(5, loadingProgress)}%` }}
                     />
                   </div>
@@ -480,20 +745,20 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
             )}
 
             {loadError && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 gap-3 z-10 text-center p-6">
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0D1114]/95 gap-3 z-10 text-center p-6">
                 <span className="text-red-400 font-semibold">{loadError}</span>
               </div>
             )}
 
-            {/* Floating 3D Toolbar Overlay */}
+            {/* Floating 3D Toolbar Overlay (#151A1E, no backdrop-blur over WebGL) */}
             <div className="absolute bottom-4 left-4 right-4 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
-              <div className="flex items-center gap-1.5 bg-slate-950/80 backdrop-blur-md p-1.5 rounded-2xl border border-white/10 pointer-events-auto shadow-lg">
+              <div className="flex items-center gap-1.5 bg-[#151A1E]/95 p-1 rounded-lg border border-slate-700/80 pointer-events-auto">
                 <button
                   onClick={() => setIsAutoSpin(!isAutoSpin)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
                     isAutoSpin
-                      ? 'bg-cyan-500/30 text-cyan-200 border border-cyan-400/40 shadow-sm'
-                      : 'text-slate-400 hover:text-white'
+                      ? 'bg-[#1769AA] text-white'
+                      : 'text-slate-300 hover:text-white'
                   }`}
                 >
                   <RotateCw className={`w-3.5 h-3.5 ${isAutoSpin ? 'animate-spin' : ''}`} />
@@ -501,29 +766,29 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
                 </button>
                 <button
                   onClick={handleResetCamera}
-                  className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
+                  className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
                 >
                   Reset View
                 </button>
               </div>
 
-              <div className="text-[11px] font-mono text-cyan-300 bg-slate-950/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 pointer-events-auto">
+              <div className="text-[11px] font-mono text-slate-300 bg-[#151A1E]/95 px-3 py-1.5 rounded-lg border border-slate-700/80 pointer-events-auto">
                 Drag: Orbit · Scroll: Zoom · Right-drag: Pan
               </div>
             </div>
           </div>
 
           {/* Right Inspector & Aerodynamic Overlays Panel */}
-          <div className="w-full lg:w-88 border-t lg:border-t-0 lg:border-l border-cyan-500/20 bg-slate-950/70 p-5 flex flex-col gap-4 overflow-y-auto max-h-[48vh] lg:max-h-full custom-scrollbar">
+          <div className="w-full lg:w-88 border-t lg:border-t-0 lg:border-l border-[var(--border)] bg-[var(--surface)] p-5 flex flex-col gap-4 overflow-y-auto max-h-[48vh] lg:max-h-full custom-scrollbar">
             
-            {/* 1. Aerodynamic Analysis Overlays (Heatmap & Vectors) */}
+            {/* 1. Aerodynamic Analysis Overlays */}
             <div className="flex flex-col gap-2.5">
-              <div className="flex items-center justify-between text-xs font-bold text-slate-200 uppercase tracking-wider font-sans">
+              <div className="flex items-center justify-between text-xs font-bold text-[#161A1D] uppercase tracking-wider font-sans">
                 <span className="flex items-center gap-1.5">
-                  <Activity className="w-3.5 h-3.5 text-cyan-400" />
-                  Aerodynamic Surface Analysis
+                  <Activity className="w-3.5 h-3.5 text-[#1769AA]" />
+                  Surface Analysis
                 </span>
-                <span className="text-[10px] text-cyan-400 font-mono">CFD Mesh</span>
+                <span className="text-[10px] text-[#5C6670] font-mono">CFD Mesh</span>
               </div>
 
               {/* Shading mode selector */}
@@ -531,29 +796,29 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
                 {[
                   { id: 'pbr', label: 'PBR Shading', desc: 'Photorealistic textures' },
                   { id: 'cfdHeatmap', label: 'CFD Pressure', desc: 'Cp surface heatmap' },
-                  { id: 'wireframe', label: 'Wireframe', desc: 'Structural mesh polygons' },
-                  { id: 'xray', label: 'X-Ray Translucent', desc: 'Internal diagnostic' },
+                  { id: 'wireframe', label: 'Wireframe', desc: 'Mesh topology' },
+                  { id: 'xray', label: 'X-Ray', desc: 'Translucent hull' },
                 ].map((s) => (
                   <button
                     key={s.id}
                     onClick={() => setShadingMode(s.id as any)}
-                    className={`p-2 rounded-xl text-left flex flex-col transition-all border ${
+                    className={`p-2 rounded-lg text-left flex flex-col transition-colors border ${
                       shadingMode === s.id
-                        ? 'bg-cyan-950/80 border-cyan-400/60 text-cyan-100 shadow-[0_0_10px_rgba(6,182,212,0.3)]'
-                        : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:text-white'
+                        ? 'bg-[var(--accent-light)] border-[#1769AA] text-[#1769AA]'
+                        : 'bg-[var(--bg)] border-[var(--border)] text-[#5C6670] hover:text-[#161A1D]'
                     }`}
                   >
                     <span className="text-xs font-bold">{s.label}</span>
-                    <span className="text-[10px] text-slate-400">{s.desc}</span>
+                    <span className="text-[10px] text-[#5C6670]">{s.desc}</span>
                   </button>
                 ))}
               </div>
 
               {/* Angle of Attack Pitch Slider */}
-              <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col gap-2">
+              <div className="p-3 rounded-lg bg-[var(--bg)] border border-[var(--border)] flex flex-col gap-2">
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-slate-300 font-medium">Test Angle of Attack (AoA):</span>
-                  <span className="font-mono text-cyan-300 font-bold">{inspectorAoA.toFixed(1)}°</span>
+                  <span className="text-[#161A1D] font-semibold">Test Angle of Attack:</span>
+                  <span className="font-mono tabular-nums text-[#1769AA] font-bold">{inspectorAoA.toFixed(1)}°</span>
                 </div>
                 <input
                   type="range"
@@ -562,19 +827,19 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
                   step="0.5"
                   value={inspectorAoA}
                   onChange={(e) => setInspectorAoA(parseFloat(e.target.value))}
-                  className="w-full accent-cyan-400 cursor-pointer"
+                  className="w-full accent-[#1769AA] cursor-pointer"
                 />
-                <div className="flex justify-between items-center text-[10px] text-slate-400">
+                <div className="flex justify-between items-center text-[10px] text-[#5C6670] font-mono">
                   <span>-10°</span>
                   <button
                     onClick={() => setIsStalled(!isStalled)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono transition-all ${
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono transition-colors border ${
                       isStalled
-                        ? 'bg-red-500/30 text-red-200 border border-red-500/50'
-                        : 'bg-slate-800 text-slate-400'
+                        ? 'bg-red-50 text-red-700 border-red-300'
+                        : 'bg-[var(--surface)] text-[#5C6670] border-[var(--border)]'
                     }`}
                   >
-                    {isStalled ? '⚠️ STALL ACTIVE' : 'Stall Normal'}
+                    {isStalled ? 'STALL ACTIVE' : 'Attached Flow'}
                   </button>
                   <span>+28°</span>
                 </div>
@@ -583,29 +848,29 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
 
             {/* 2. Force Vectors Toggle */}
             <div className="flex flex-col gap-2">
-              <span className="text-xs font-bold text-slate-200 uppercase tracking-wider font-sans flex items-center gap-1.5">
-                <Wind className="w-3.5 h-3.5 text-cyan-400" />
-                3D Force Vectors Overlay
+              <span className="text-xs font-bold text-[#161A1D] uppercase tracking-wider font-sans flex items-center gap-1.5">
+                <Wind className="w-3.5 h-3.5 text-[#1769AA]" />
+                3D Force Vectors
               </span>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => setShowForceVectors(!showForceVectors)}
-                  className={`py-2 px-3 rounded-xl text-xs font-semibold transition-all border flex items-center justify-center gap-1.5 ${
+                  className={`py-2 px-3 rounded-lg text-xs font-semibold transition-colors border flex items-center justify-center gap-1.5 ${
                     showForceVectors
-                      ? 'bg-cyan-500/30 text-cyan-100 border-cyan-400/50 shadow-sm'
-                      : 'bg-slate-900/60 text-slate-400 border-slate-800 hover:text-white'
+                      ? 'bg-[var(--accent-light)] text-[#1769AA] border-[#1769AA]'
+                      : 'bg-[var(--bg)] text-[#5C6670] border-[var(--border)] hover:text-[#161A1D]'
                   }`}
                 >
                   <Activity className="w-3.5 h-3.5" />
-                  <span>{showForceVectors ? 'Vectors Visible' : 'Vectors Hidden'}</span>
+                  <span>{showForceVectors ? 'Vectors On' : 'Vectors Off'}</span>
                 </button>
 
                 <button
                   onClick={() => setLandingGearDeployed(!landingGearDeployed)}
-                  className={`py-2 px-3 rounded-xl text-xs font-semibold transition-all border flex items-center justify-center gap-1.5 ${
+                  className={`py-2 px-3 rounded-lg text-xs font-semibold transition-colors border flex items-center justify-center gap-1.5 ${
                     landingGearDeployed
-                      ? 'bg-amber-500/20 text-amber-200 border-amber-400/40'
-                      : 'bg-slate-900/60 text-slate-400 border-slate-800 hover:text-white'
+                      ? 'bg-[var(--accent-light)] text-[#1769AA] border-[#1769AA]'
+                      : 'bg-[var(--bg)] text-[#5C6670] border-[var(--border)] hover:text-[#161A1D]'
                   }`}
                 >
                   <Compass className="w-3.5 h-3.5" />
@@ -616,24 +881,24 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
 
             {/* 3. Studio Lighting Atmosphere */}
             <div className="flex flex-col gap-2">
-              <span className="text-xs font-bold text-slate-200 uppercase tracking-wider font-sans flex items-center gap-1.5">
-                <Sun className="w-3.5 h-3.5 text-amber-400" />
+              <span className="text-xs font-bold text-[#161A1D] uppercase tracking-wider font-sans flex items-center gap-1.5">
+                <Sun className="w-3.5 h-3.5 text-[#1769AA]" />
                 Lighting Environment
               </span>
               <div className="grid grid-cols-2 gap-1.5">
                 {[
                   { id: 'tunnel', label: 'Wind Tunnel' },
                   { id: 'studio', label: 'Studio White' },
-                  { id: 'sunset', label: 'Sunset Glow' },
-                  { id: 'cyber', label: 'Cyberpunk' },
+                  { id: 'sunset', label: 'Warm Key' },
+                  { id: 'cyber', label: 'High Contrast' },
                 ].map((l) => (
                   <button
                     key={l.id}
                     onClick={() => setLightingPreset(l.id as any)}
-                    className={`py-1.5 px-2 rounded-xl text-xs font-medium text-center transition-all border ${
+                    className={`py-1.5 px-2 rounded-lg text-xs font-medium text-center transition-colors border ${
                       lightingPreset === l.id
-                        ? 'bg-cyan-950/80 text-cyan-200 border-cyan-400/50 shadow-sm'
-                        : 'bg-slate-900/40 text-slate-400 border-slate-800 hover:text-white'
+                        ? 'bg-[var(--accent-light)] text-[#1769AA] border-[#1769AA] font-semibold'
+                        : 'bg-[var(--bg)] text-[#5C6670] border-[var(--border)] hover:text-[#161A1D]'
                     }`}
                   >
                     {l.label}
@@ -643,22 +908,22 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
             </div>
 
             {/* 4. Asset Technical Specifications */}
-            <div className="mt-auto pt-3 border-t border-cyan-500/15 flex flex-col gap-2 text-[11px] text-slate-400">
+            <div className="mt-auto pt-3 border-t border-[var(--border)] flex flex-col gap-2 text-[11px] text-[#5C6670]">
               <div className="flex justify-between">
                 <span>Model Format:</span>
-                <span className="font-mono text-cyan-300">GLTF 2.0 Binary (.glb)</span>
+                <span className="font-mono text-[#161A1D] font-medium">GLTF 2.0 (.glb)</span>
               </div>
               <div className="flex justify-between">
                 <span>Total Meshes:</span>
-                <span className="font-mono text-cyan-300">{meshCount > 0 ? `${meshCount} Groups` : currentMeta?.meshCountLabel}</span>
+                <span className="font-mono tabular-nums text-[#161A1D] font-medium">{meshCount > 0 ? `${meshCount} Groups` : currentMeta?.meshCountLabel}</span>
               </div>
               <div className="flex justify-between">
                 <span>Vertices:</span>
-                <span className="font-mono text-cyan-300">{vertexCount > 0 ? vertexCount.toLocaleString() : '52,400+'}</span>
+                <span className="font-mono tabular-nums text-[#161A1D] font-medium">{vertexCount > 0 ? vertexCount.toLocaleString() : '52,400+'}</span>
               </div>
               <div className="flex justify-between">
                 <span>Wingspan:</span>
-                <span className="font-mono text-cyan-300">{AIRCRAFT_MODELS[selectedModel]?.wingspan} m</span>
+                <span className="font-mono tabular-nums text-[#161A1D] font-medium">{AIRCRAFT_MODELS[selectedModel]?.wingspan} m</span>
               </div>
 
               {onApplyToWindTunnel && (
@@ -667,10 +932,10 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
                     onApplyToWindTunnel({ modelType: selectedModel, landingGear: landingGearDeployed });
                     onClose();
                   }}
-                  className="w-full mt-2 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-sky-400 text-slate-950 font-bold text-xs shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:brightness-110 transition-all flex items-center justify-center gap-1.5"
+                  className="w-full mt-2 py-2.5 rounded-lg bg-[#1769AA] hover:bg-[#145a92] text-white font-semibold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-sm"
                 >
                   <Check className="w-4 h-4" />
-                  <span>Apply to Wind Tunnel &amp; Return</span>
+                  <span>Apply to Wind Tunnel</span>
                 </button>
               )}
             </div>

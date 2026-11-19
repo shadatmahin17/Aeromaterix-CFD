@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: "Quicksand", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-script: "Sacramento", "Pacifico", cursive;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
 :root {
   --bg: #F7F9FA;
   --surface: #FFFFFF;
@@ -18,13 +24,35 @@
 }
 
 @layer base {
+  html,
   body {
     background-color: var(--bg);
     color: var(--text);
+    font-family: var(--font-sans);
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Touch-friendly range slider thumbs across mobile & desktop */
+  input[type="range"] {
+    min-height: 24px;
+    touch-action: pan-y;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    width: 18px;
+    height: 18px;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
   }
 }
 
 @layer utilities {
+  .font-script {
+    font-family: var(--font-script);
+  }
+
   .perspective-1000 {
     perspective: 1000px;
   }
@@ -72,6 +100,9 @@
   }
 
   /* Sleek precision scrollbar */
+  .custom-scrollbar {
+    -webkit-overflow-scrolling: touch;
+  }
   .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
     height: 6px;

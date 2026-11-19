@@ -145,7 +145,7 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
             </button>
 
             {showExportMenu && (
-              <div className="absolute right-0 top-full mt-1.5 w-60 rounded-xl bg-[var(--surface)] border border-[var(--border)] shadow-xl p-1.5 z-50 flex flex-col gap-1">
+              <div className="absolute right-0 top-full mt-1.5 w-60 max-w-[calc(100vw-2rem)] rounded-xl bg-[var(--surface)] border border-[var(--border)] shadow-xl p-1.5 z-50 flex flex-col gap-1">
                 <div className="px-2 py-1 border-b border-[var(--border)]">
                   <span className="text-[10px] font-mono uppercase tracking-wider text-[#5C6670]">
                     Export Flight Data
@@ -204,7 +204,7 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
             </div>
           </div>
           <div className="my-1.5 flex items-baseline gap-1">
-            <span className="text-xl sm:text-2xl font-bold tracking-tight text-[#161A1D] font-mono tabular-nums">
+            <span className="text-lg sm:text-2xl font-bold tracking-tight text-[#161A1D] font-mono tabular-nums">
               {telemetry.cl.toFixed(2)}
             </span>
             <span className="text-[11px] font-mono text-[#1769AA] font-bold">CL</span>
@@ -224,7 +224,7 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
             </div>
           </div>
           <div className="my-1.5 flex items-baseline gap-1">
-            <span className="text-xl sm:text-2xl font-bold tracking-tight text-[#161A1D] font-mono tabular-nums">
+            <span className="text-lg sm:text-2xl font-bold tracking-tight text-[#161A1D] font-mono tabular-nums">
               {telemetry.cd.toFixed(3)}
             </span>
             <span className="text-[11px] font-mono text-amber-700 font-bold">CD</span>
@@ -244,7 +244,7 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
             </div>
           </div>
           <div className="my-1.5 flex items-baseline gap-1">
-            <span className="text-xl sm:text-2xl font-bold tracking-tight text-emerald-700 font-mono tabular-nums">
+            <span className="text-lg sm:text-2xl font-bold tracking-tight text-emerald-700 font-mono tabular-nums">
               {telemetry.ldRatio.toFixed(1)}
             </span>
             <span className="text-[11px] font-mono text-emerald-700 font-bold">L/D</span>
@@ -264,7 +264,7 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
             </div>
           </div>
           <div className="my-1.5 flex items-baseline gap-1">
-            <span className={`text-xl sm:text-2xl font-bold tracking-tight font-mono tabular-nums ${telemetry.mach >= 1.0 ? 'text-amber-700' : 'text-[#161A1D]'}`}>
+            <span className={`text-lg sm:text-2xl font-bold tracking-tight font-mono tabular-nums ${telemetry.mach >= 1.0 ? 'text-amber-700' : 'text-[#161A1D]'}`}>
               M {telemetry.mach.toFixed(2)}
             </span>
           </div>
@@ -283,7 +283,7 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
             </div>
           </div>
           <div className="my-1.5 flex items-baseline gap-1">
-            <span className="text-xl sm:text-2xl font-bold tracking-tight text-[#161A1D] font-mono tabular-nums">
+            <span className="text-lg sm:text-2xl font-bold tracking-tight text-[#161A1D] font-mono tabular-nums">
               {(telemetry.dynamic_pressure_pa / 1000).toFixed(1)}
             </span>
             <span className="text-[11px] font-mono text-[#5C6670] font-bold">kPa</span>
@@ -330,7 +330,7 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
 
       {/* LIFT GENERATION MECHANICS BREAKDOWN PANEL */}
       {showLiftDetails && (
-        <div className="antigravity-glass p-3.5 rounded-xl flex flex-col gap-3">
+        <div className="antigravity-glass p-3 sm:p-3.5 rounded-xl flex flex-col gap-3">
           <div className="flex items-center justify-between gap-1 border-b border-[var(--border)] pb-2">
             <div className="flex items-center gap-1.5">
               <div className="w-5 h-5 rounded-md bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA]">

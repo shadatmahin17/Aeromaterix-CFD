@@ -957,7 +957,7 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
   };
 
   return (
-    <div className="relative w-full h-full min-h-[460px] rounded-xl overflow-hidden border border-[var(--border)] bg-[#0D1114] select-none shadow-[var(--shadow-tech)]">
+    <div className="relative w-full h-full min-h-[220px] sm:min-h-[360px] lg:min-h-[460px] rounded-xl overflow-hidden border border-[var(--border)] bg-[#0D1114] select-none shadow-[var(--shadow-tech)]">
       {/* Real 3D Canvas */}
       <canvas
         ref={canvasRef}
@@ -966,21 +966,21 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
         onWheel={handleWheel}
-        className="w-full h-full block cursor-grab active:cursor-grabbing"
+        className="w-full h-full block touch-none cursor-grab active:cursor-grabbing"
       />
 
       {/* Top Left: 3D Aircraft Model Telemetry Overlay */}
-      <div className="absolute top-3 left-3 flex flex-col gap-2 pointer-events-none">
-        <div className="px-3 py-1.5 rounded-lg bg-[#151A1E]/95 border border-slate-700/80 flex items-center gap-2 text-xs">
-          <span className="font-semibold text-slate-100 font-sans">
+      <div className="absolute top-2.5 left-2.5 flex flex-col gap-1.5 pointer-events-none max-w-[52vw] sm:max-w-none">
+        <div className="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-[#151A1E]/95 border border-slate-700/80 flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs overflow-hidden">
+          <span className="font-semibold text-slate-100 font-sans truncate">
             {AIRCRAFT_MODELS[params.modelType].name}
           </span>
-          <span className="text-slate-500" aria-hidden="true">·</span>
-          <span className="text-sky-300 font-mono font-semibold tabular-nums">
+          <span className="text-slate-500 shrink-0" aria-hidden="true">·</span>
+          <span className="text-sky-300 font-mono font-semibold tabular-nums shrink-0">
             α {params.angle_of_attack >= 0 ? '+' : ''}{params.angle_of_attack.toFixed(1)}°
           </span>
-          <span className="text-slate-500" aria-hidden="true">·</span>
-          <span className="text-slate-300 font-mono text-[11px]">
+          <span className="hidden sm:inline text-slate-500" aria-hidden="true">·</span>
+          <span className="hidden sm:inline text-slate-300 font-mono text-[11px] whitespace-nowrap">
             Biot-Savart + Vertex Flow
           </span>
         </div>
@@ -1122,31 +1122,31 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
       </div>
 
       {/* Bottom Floating Legend / Help Overlay */}
-      <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between pointer-events-none text-xs text-slate-300">
-        <div className="flex flex-wrap items-center gap-2.5 bg-[#151A1E]/95 px-3 py-1.5 rounded-lg border border-slate-700/80">
-          <span className="text-slate-100 font-medium">Canvas 3D</span>
-          <span className="text-slate-500" aria-hidden="true">·</span>
-          <span className="text-sky-300">Drag to Orbit</span>
-          <span className="text-slate-500" aria-hidden="true">·</span>
-          <span className="text-amber-300">Shift+Drag to Pitch AoA</span>
-          <span className="text-slate-500" aria-hidden="true">·</span>
-          <div className="flex items-center gap-2 pl-1 border-l border-slate-700/80">
+      <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2 pointer-events-none text-[10px] sm:text-xs text-slate-300">
+        <div className="flex flex-wrap items-center gap-2 bg-[#151A1E]/95 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg border border-slate-700/80">
+          <span className="hidden sm:inline text-slate-100 font-medium">Canvas 3D</span>
+          <span className="hidden sm:inline text-slate-500" aria-hidden="true">·</span>
+          <span className="hidden md:inline text-sky-300">Drag to Orbit</span>
+          <span className="hidden md:inline text-slate-500" aria-hidden="true">·</span>
+          <span className="hidden md:inline text-amber-300">Shift+Drag to Pitch AoA</span>
+          <span className="hidden md:inline text-slate-500" aria-hidden="true">·</span>
+          <div className="flex items-center gap-1.5 sm:gap-2 md:pl-1 md:border-l md:border-slate-700/80">
             <span className="w-2 h-2 rounded-full bg-sky-400" />
-            <span className="text-[11px] text-sky-300 font-mono">Suction</span>
-            <span className="w-2 h-2 rounded-full bg-amber-400 ml-1" />
-            <span className="text-[11px] text-amber-300 font-mono">Compression</span>
+            <span className="text-[10px] sm:text-[11px] text-sky-300 font-mono">Suction</span>
+            <span className="w-2 h-2 rounded-full bg-amber-400 ml-0.5" />
+            <span className="text-[10px] sm:text-[11px] text-amber-300 font-mono">Press</span>
             {params.show_pressure_vectors && (
               <>
-                <span className="w-2 h-2 rounded-full bg-emerald-400 ml-1" />
-                <span className="text-[11px] text-emerald-300 font-mono">Lift</span>
-                <span className="w-2 h-2 rounded-full bg-amber-500 ml-1" />
-                <span className="text-[11px] text-amber-400 font-mono">Drag</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 ml-0.5" />
+                <span className="text-[10px] sm:text-[11px] text-emerald-300 font-mono">Lift</span>
+                <span className="w-2 h-2 rounded-full bg-amber-500 ml-0.5" />
+                <span className="text-[10px] sm:text-[11px] text-amber-400 font-mono">Drag</span>
               </>
             )}
           </div>
         </div>
 
-        <div className="hidden sm:flex items-center gap-2 bg-[#151A1E]/95 px-3 py-1.5 rounded-lg border border-slate-700/80 font-mono tabular-nums">
+        <div className="hidden sm:flex items-center gap-2 bg-[#151A1E]/95 px-3 py-1.5 rounded-lg border border-slate-700/80 font-mono tabular-nums shrink-0">
           <Activity className="w-3.5 h-3.5 text-emerald-400" />
           <span className="text-emerald-300 font-semibold">L/D: {telemetry.ldRatio.toFixed(1)}:1</span>
           <span className="text-slate-500" aria-hidden="true">·</span>

@@ -607,31 +607,31 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
   const currentMeta = GLB_MODEL_REGISTRY[selectedModel];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-[#0D1114]/65 backdrop-blur-sm">
-      <div className="relative w-full max-w-6xl h-[92vh] bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-2xl flex flex-col overflow-hidden text-[var(--text)]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 md:p-6 bg-[#0D1114]/65 backdrop-blur-sm">
+      <div className="relative w-full max-w-6xl h-[100dvh] sm:h-[92vh] bg-[var(--surface)] border-0 sm:border border-[var(--border)] rounded-none sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden text-[var(--text)]">
         
         {/* Top Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)] bg-[var(--surface)]">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA]">
-              <Box className="w-5 h-5" />
+        <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 sm:px-6 sm:py-4 border-b border-[var(--border)] bg-[var(--surface)] shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA] shrink-0">
+              <Box className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-bold font-sans tracking-tight text-[#161A1D]">
-                  3D CAD Asset Inspector
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                <h2 className="text-sm sm:text-lg font-bold font-sans tracking-tight text-[#161A1D] truncate">
+                  3D CAD Inspector
                 </h2>
-                <span className="text-[11px] font-mono text-[#1769AA] font-semibold">
+                <span className="text-[10px] sm:text-[11px] font-mono text-[#1769AA] font-semibold whitespace-nowrap">
                   GLTF 2.0{currentMeta ? ` · ${currentMeta.fileSizeLabel}` : ''}
                 </span>
               </div>
-              <p className="text-xs text-[#5C6670]">
+              <p className="hidden sm:block text-xs text-[#5C6670] truncate">
                 {currentMeta ? currentMeta.sourceCredit : 'High-fidelity aerodynamic CAD meshes'}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               onClick={handleTakeSnapshot}
               className="p-2 sm:px-3 sm:py-1.5 rounded-lg bg-[var(--bg)] hover:bg-[var(--accent-light)] text-[#161A1D] hover:text-[#1769AA] border border-[var(--border)] hover:border-[#1769AA] transition-colors flex items-center gap-1.5 text-xs font-semibold"
@@ -651,8 +651,8 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
         </div>
 
         {/* Model Tabs Bar */}
-        <div className="px-6 py-2.5 bg-[var(--bg)] border-b border-[var(--border)] flex items-center gap-2 overflow-x-auto custom-scrollbar">
-          <span className="text-xs font-mono font-bold text-[#5C6670] mr-2 flex items-center gap-1 shrink-0">
+        <div className="px-3.5 sm:px-6 py-2 sm:py-2.5 bg-[var(--bg)] border-b border-[var(--border)] flex items-center gap-1.5 sm:gap-2 overflow-x-auto custom-scrollbar shrink-0">
+          <span className="hidden sm:flex text-xs font-mono font-bold text-[#5C6670] mr-2 items-center gap-1 shrink-0">
             <Plane className="w-3.5 h-3.5 text-[#1769AA]" />
             MODEL:
           </span>
@@ -683,10 +683,10 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
         </div>
 
         {/* Main Body */}
-        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0">
           
           {/* Left Viewport (3D Canvas — --dark: #0D1114) */}
-          <div className="relative flex-1 h-full min-h-[360px] bg-[#0D1114]">
+          <div className="relative flex-1 h-full min-h-[210px] sm:min-h-[320px] bg-[#0D1114]">
             {webglUnavailable ? (
               <>
                 <canvas
@@ -713,14 +713,14 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
                   onWheel={(e) => {
                     fallbackCamRef.current.distance = Math.max(7, Math.min(30, fallbackCamRef.current.distance + e.deltaY * 0.015));
                   }}
-                  className="w-full h-full block cursor-grab active:cursor-grabbing"
+                  className="w-full h-full block touch-none cursor-grab active:cursor-grabbing"
                 />
-                <div className="absolute top-4 left-4 px-3 py-1.5 rounded-lg bg-[#151A1E]/95 border border-amber-500/50 text-amber-200 text-[11px] font-mono pointer-events-none">
-                  Software 3D Canvas Fallback (WebGL2 unavailable)
+                <div className="absolute top-2.5 left-2.5 sm:top-4 sm:left-4 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg bg-[#151A1E]/95 border border-amber-500/50 text-amber-200 text-[10px] sm:text-[11px] font-mono pointer-events-none">
+                  Canvas 3D <span className="hidden sm:inline">Fallback (WebGL2 unavailable)</span>
                 </div>
               </>
             ) : (
-              <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+              <div ref={mountRef} className="w-full h-full touch-none cursor-grab active:cursor-grabbing" />
             )}
 
             {/* Loading Indicator */}
@@ -751,11 +751,11 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
             )}
 
             {/* Floating 3D Toolbar Overlay (#151A1E, no backdrop-blur over WebGL) */}
-            <div className="absolute bottom-4 left-4 right-4 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
-              <div className="flex items-center gap-1.5 bg-[#151A1E]/95 p-1 rounded-lg border border-slate-700/80 pointer-events-auto">
+            <div className="absolute bottom-2.5 left-2.5 right-2.5 sm:bottom-4 sm:left-4 sm:right-4 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+              <div className="flex items-center gap-1 sm:gap-1.5 bg-[#151A1E]/95 p-1 rounded-lg border border-slate-700/80 pointer-events-auto">
                 <button
                   onClick={() => setIsAutoSpin(!isAutoSpin)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                  className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-md text-[11px] sm:text-xs font-semibold flex items-center gap-1.5 transition-colors ${
                     isAutoSpin
                       ? 'bg-[#1769AA] text-white'
                       : 'text-slate-300 hover:text-white'
@@ -766,20 +766,20 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
                 </button>
                 <button
                   onClick={handleResetCamera}
-                  className="px-3 py-1.5 rounded-md text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+                  className="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-md text-[11px] sm:text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
                 >
                   Reset View
                 </button>
               </div>
 
-              <div className="text-[11px] font-mono text-slate-300 bg-[#151A1E]/95 px-3 py-1.5 rounded-lg border border-slate-700/80 pointer-events-auto">
+              <div className="hidden md:block text-[11px] font-mono text-slate-300 bg-[#151A1E]/95 px-3 py-1.5 rounded-lg border border-slate-700/80 pointer-events-auto">
                 Drag: Orbit · Scroll: Zoom · Right-drag: Pan
               </div>
             </div>
           </div>
 
           {/* Right Inspector & Aerodynamic Overlays Panel */}
-          <div className="w-full lg:w-88 border-t lg:border-t-0 lg:border-l border-[var(--border)] bg-[var(--surface)] p-5 flex flex-col gap-4 overflow-y-auto max-h-[48vh] lg:max-h-full custom-scrollbar">
+          <div className="w-full lg:w-88 border-t lg:border-t-0 lg:border-l border-[var(--border)] bg-[var(--surface)] p-3.5 sm:p-5 pb-[max(1rem,env(safe-area-inset-bottom))] flex flex-col gap-4 overflow-y-auto overscroll-contain max-h-[42vh] sm:max-h-[48vh] lg:max-h-full custom-scrollbar">
             
             {/* 1. Aerodynamic Analysis Overlays */}
             <div className="flex flex-col gap-2.5">

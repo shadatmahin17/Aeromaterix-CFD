@@ -366,7 +366,7 @@ export const AeroCharts: React.FC<AeroChartsProps> = ({
   };
 
   return (
-    <div className="w-full p-3.5 rounded-xl antigravity-glass flex flex-col gap-2.5">
+    <div className="w-full p-3 sm:p-3.5 rounded-xl antigravity-glass flex flex-col gap-2.5">
       {/* Chart Header & Tabs */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-1.5">
@@ -405,7 +405,7 @@ export const AeroCharts: React.FC<AeroChartsProps> = ({
               </button>
 
               {showChartExportMenu && (
-                <div className="absolute right-0 top-full mt-1 w-52 rounded-xl bg-[var(--surface)] border border-[var(--border)] shadow-xl p-1.5 z-50 flex flex-col gap-1">
+                <div className="absolute right-0 top-full mt-1 w-52 max-w-[calc(100vw-2rem)] rounded-xl bg-[var(--surface)] border border-[var(--border)] shadow-xl p-1.5 z-50 flex flex-col gap-1">
                   <div className="px-2 py-1 border-b border-[var(--border)]">
                     <span className="text-[9px] font-mono uppercase tracking-wider text-[#5C6670]">
                       Export Active Graph
@@ -463,7 +463,7 @@ export const AeroCharts: React.FC<AeroChartsProps> = ({
         <div className="grid grid-cols-3 gap-1 p-1 rounded-lg bg-[var(--bg)] border border-[var(--border)]">
           <button
             onClick={() => setActiveTab('lift')}
-            className={`py-1 text-[11px] font-semibold rounded-md text-center transition-colors cursor-pointer ${
+            className={`py-1.5 sm:py-1 text-[11px] font-semibold rounded-md text-center transition-colors cursor-pointer ${
               activeTab === 'lift'
                 ? 'bg-[#1769AA] text-white'
                 : 'text-[#5C6670] hover:text-[#161A1D]'
@@ -473,7 +473,7 @@ export const AeroCharts: React.FC<AeroChartsProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('dragPolar')}
-            className={`py-1 text-[11px] font-semibold rounded-md text-center transition-colors cursor-pointer ${
+            className={`py-1.5 sm:py-1 text-[11px] font-semibold rounded-md text-center transition-colors cursor-pointer ${
               activeTab === 'dragPolar'
                 ? 'bg-[#1769AA] text-white'
                 : 'text-[#5C6670] hover:text-[#161A1D]'
@@ -483,7 +483,7 @@ export const AeroCharts: React.FC<AeroChartsProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('pressure')}
-            className={`py-1 text-[11px] font-semibold rounded-md text-center transition-colors cursor-pointer ${
+            className={`py-1.5 sm:py-1 text-[11px] font-semibold rounded-md text-center transition-colors cursor-pointer ${
               activeTab === 'pressure'
                 ? 'bg-[#1769AA] text-white'
                 : 'text-[#5C6670] hover:text-[#161A1D]'
@@ -495,7 +495,7 @@ export const AeroCharts: React.FC<AeroChartsProps> = ({
       </div>
 
       {/* Graph Area */}
-      <div className="w-full h-[185px] bg-[var(--bg)] rounded-xl border border-[var(--border)] p-1 flex items-center justify-center">
+      <div className="w-full h-[170px] sm:h-[190px] bg-[var(--bg)] rounded-xl border border-[var(--border)] p-1 flex items-center justify-center">
         {activeTab === 'lift' && renderLiftCurve()}
         {activeTab === 'dragPolar' && renderDragPolar()}
         {activeTab === 'pressure' && renderPressureCurve()}

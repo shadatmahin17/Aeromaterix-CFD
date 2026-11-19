@@ -134,19 +134,19 @@ export default function App() {
   const currentModel = AIRCRAFT_MODELS[params.modelType];
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-[var(--bg)] text-[var(--text)] flex flex-col font-sans select-none selection:bg-[var(--accent-light)] selection:text-[var(--accent)]">
+    <div className="h-screen h-[100dvh] w-screen overflow-hidden bg-[var(--bg)] text-[var(--text)] flex flex-col font-sans select-none selection:bg-[var(--accent-light)] selection:text-[var(--accent)]">
       {/* 1. TOP BAR — CFD WORKSTATION NAVIGATION */}
-      <header className="h-14 px-3 sm:px-4 border-b border-[var(--border)] bg-[var(--nav-bg)] backdrop-blur-md flex items-center justify-between z-30 flex-shrink-0 shadow-[var(--shadow-tech)]">
-        {/* Left Zone: Brand wordmark & flight status readout */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2.5">
+      <header className="h-12 sm:h-14 px-2 sm:px-4 border-b border-[var(--border)] bg-[var(--nav-bg)] backdrop-blur-md flex items-center justify-between gap-1.5 z-30 flex-shrink-0 shadow-[var(--shadow-tech)]">
+        {/* Left Zone: Brand logo & flight status readout */}
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink-0">
+          <div className="flex items-center gap-2">
             <img
               src="/aerolab-logo.png"
               alt="AeroLab"
-              className="h-8 sm:h-9 w-auto object-contain shrink-0"
+              className="h-7 sm:h-8 w-auto object-contain shrink-0"
             />
-            <span className="hidden sm:inline text-[11px] font-mono font-semibold text-[#5C6670]">
-              CFD Workstation
+            <span className="hidden md:inline font-script text-xl leading-none text-[#1769AA] pt-0.5">
+              Wind Tunnel
             </span>
           </div>
 
@@ -169,44 +169,47 @@ export default function App() {
         </div>
 
         {/* Center Zone: Mobile & Tablet Segmented Tab Switcher (< lg) */}
-        <div className="flex lg:hidden items-center p-0.5 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-xs">
+        <div className="flex lg:hidden items-center p-0.5 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[11px] sm:text-xs shrink-0">
           <button
             onClick={() => setMobileTab('controls')}
-            className={`px-2.5 py-1 rounded-md font-semibold flex items-center gap-1.5 transition-colors ${
+            className={`px-2 sm:px-2.5 py-1.5 sm:py-1 rounded-md font-semibold flex items-center gap-1 transition-colors ${
               mobileTab === 'controls'
                 ? 'bg-[#1769AA] text-white'
                 : 'text-[#5C6670] hover:text-[#161A1D]'
             }`}
+            aria-label="Controls"
           >
-            <Sliders className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Controls</span>
+            <Sliders className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden min-[400px]:inline">Setup</span>
           </button>
           <button
             onClick={() => setMobileTab('tunnel')}
-            className={`px-2.5 py-1 rounded-md font-semibold flex items-center gap-1.5 transition-colors ${
+            className={`px-2 sm:px-2.5 py-1.5 sm:py-1 rounded-md font-semibold flex items-center gap-1 transition-colors ${
               mobileTab === 'tunnel'
                 ? 'bg-[#1769AA] text-white'
                 : 'text-[#5C6670] hover:text-[#161A1D]'
             }`}
+            aria-label="3D View"
           >
-            <Wind className="w-3.5 h-3.5" />
-            <span>3D View</span>
+            <Wind className="w-3.5 h-3.5 shrink-0" />
+            <span>3D</span>
           </button>
           <button
             onClick={() => setMobileTab('results')}
-            className={`px-2.5 py-1 rounded-md font-semibold flex items-center gap-1.5 transition-colors ${
+            className={`px-2 sm:px-2.5 py-1.5 sm:py-1 rounded-md font-semibold flex items-center gap-1 transition-colors ${
               mobileTab === 'results'
                 ? 'bg-[#1769AA] text-white'
                 : 'text-[#5C6670] hover:text-[#161A1D]'
             }`}
+            aria-label="Results"
           >
-            <Activity className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Results</span>
+            <Activity className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden min-[400px]:inline">Data</span>
           </button>
         </div>
 
         {/* Right Zone: Workstation Controls & Modal Actions */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {/* Desktop Left Sidebar Toggle */}
           <button
             onClick={() => setShowLeftSidebar((prev) => !prev)}
@@ -240,7 +243,7 @@ export default function App() {
           {/* 3D CAD Asset Inspector Trigger */}
           <button
             onClick={() => setIsModelViewerOpen(true)}
-            className="px-2.5 py-1.5 rounded-lg bg-[var(--surface)] border border-[var(--border)] hover:border-[#1769AA] text-xs font-semibold text-[#161A1D] hover:text-[#1769AA] transition-colors flex items-center gap-1.5 shadow-sm"
+            className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg bg-[var(--surface)] border border-[var(--border)] hover:border-[#1769AA] text-xs font-semibold text-[#161A1D] hover:text-[#1769AA] transition-colors flex items-center gap-1.5 shadow-sm"
             title="Inspect 3D GLB CAD Model with Full Turntable & Specifications"
           >
             <Box className="w-3.5 h-3.5 text-[#1769AA]" />
@@ -291,7 +294,7 @@ export default function App() {
           className={`
             ${showLeftSidebar ? 'lg:flex lg:w-80 xl:w-96' : 'lg:hidden'}
             ${mobileTab === 'controls' ? 'flex flex-1 w-full' : 'hidden'}
-            flex-shrink-0 h-full overflow-y-auto custom-scrollbar border-r border-[var(--border)] bg-[var(--bg)] p-3.5 flex-col gap-3.5 z-20
+            flex-shrink-0 h-full overflow-y-auto overscroll-contain custom-scrollbar border-r border-[var(--border)] bg-[var(--bg)] p-3 sm:p-3.5 pb-8 flex-col gap-3.5 z-20
           `}
         >
           <div className="flex items-center justify-between border-b border-[var(--border)] pb-2">
@@ -325,7 +328,7 @@ export default function App() {
           aria-label="3D Wind Tunnel Viewport"
           className={`
             ${mobileTab === 'tunnel' ? 'flex flex-1 w-full' : 'hidden lg:flex'}
-            flex-1 h-full min-h-[400px] lg:min-h-0 relative flex-col overflow-hidden bg-[var(--bg)] p-2 sm:p-3
+            flex-1 h-full min-h-0 relative flex-col overflow-hidden bg-[var(--bg)] p-1.5 sm:p-3
           `}
         >
           <div className="w-full h-full relative flex-1 min-h-0">
@@ -351,14 +354,14 @@ export default function App() {
           </div>
 
           {/* Mobile/Tablet Quick Pitch & Pause Bar (placed below viewport to avoid overlapping 3D camera/shading dock) */}
-          <div className="lg:hidden flex items-center justify-between gap-2 pt-2 px-1 flex-shrink-0">
+          <div className="lg:hidden flex flex-wrap items-center justify-between gap-1.5 pt-1.5 px-0.5 flex-shrink-0">
             <div className="flex items-center gap-1 bg-[var(--surface)] p-1 rounded-lg border border-[var(--border)] shadow-sm">
-              <span className="text-[10px] text-[var(--text-secondary)] font-mono pl-1.5 pr-0.5">Pitch:</span>
+              <span className="text-[10px] text-[var(--text-secondary)] font-mono pl-1 pr-0.5">AoA:</span>
               {[-5, 0, 5, 15].map((a) => (
                 <button
                   key={a}
                   onClick={() => handleParamChange('angle_of_attack', a)}
-                  className={`px-2 py-0.5 rounded text-[11px] font-mono transition-colors ${
+                  className={`px-2 py-1 rounded text-[11px] font-mono transition-colors ${
                     Math.abs(params.angle_of_attack - a) < 1
                       ? 'bg-[#1769AA] text-white font-semibold'
                       : 'bg-[var(--bg)] text-[var(--text)] hover:text-[#1769AA]'
@@ -369,16 +372,24 @@ export default function App() {
               ))}
             </div>
 
-            <button
-              onClick={() => setIsPaused((prev) => !prev)}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold border transition-colors shadow-sm ${
-                isPaused
-                  ? 'bg-amber-500 border-amber-600 text-slate-950 font-bold'
-                  : 'bg-[var(--surface)] border-[var(--border)] text-[var(--text)] hover:border-[#1769AA]'
-              }`}
-            >
-              {isPaused ? 'Resume' : 'Pause'}
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setMobileTab('results')}
+                className="px-2.5 py-1.5 rounded-lg text-[11px] font-mono font-semibold bg-[var(--surface)] border border-[var(--border)] text-[#1769AA]"
+              >
+                L/D {telemetry.ldRatio.toFixed(1)}
+              </button>
+              <button
+                onClick={() => setIsPaused((prev) => !prev)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors shadow-sm ${
+                  isPaused
+                    ? 'bg-amber-500 border-amber-600 text-slate-950 font-bold'
+                    : 'bg-[var(--surface)] border-[var(--border)] text-[var(--text)] hover:border-[#1769AA]'
+                }`}
+              >
+                {isPaused ? 'Resume' : 'Pause'}
+              </button>
+            </div>
           </div>
         </section>
 
@@ -391,7 +402,7 @@ export default function App() {
           className={`
             ${showRightSidebar ? 'lg:flex lg:w-88 xl:w-[420px]' : 'lg:hidden'}
             ${mobileTab === 'results' ? 'flex flex-1 w-full' : 'hidden'}
-            flex-shrink-0 h-full overflow-y-auto custom-scrollbar border-l border-[var(--border)] bg-[var(--bg)] p-3.5 flex-col gap-3.5 z-20
+            flex-shrink-0 h-full overflow-y-auto overscroll-contain custom-scrollbar border-l border-[var(--border)] bg-[var(--bg)] p-3 sm:p-3.5 pb-8 flex-col gap-3.5 z-20
           `}
         >
           <div className="flex items-center justify-between border-b border-[var(--border)] pb-2">
@@ -449,7 +460,7 @@ export default function App() {
       </main>
 
       {/* 3. WORKSTATION BOTTOM STATUS STRIP */}
-      <footer className="h-7 border-t border-[var(--border)] bg-[var(--surface)] px-3 sm:px-4 flex items-center justify-between gap-2 text-[11px] text-[#5C6670] z-30 flex-shrink-0 overflow-hidden">
+      <footer className="min-h-7 py-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] border-t border-[var(--border)] bg-[var(--surface)] px-2.5 sm:px-4 flex items-center justify-between gap-2 text-[11px] text-[#5C6670] z-30 flex-shrink-0 overflow-hidden">
         <div className="hidden xl:flex items-center gap-2.5 whitespace-nowrap">
           <div className="flex items-center gap-1 text-[#161A1D] font-semibold">
             <Keyboard className="w-3 h-3 text-[#1769AA]" />
@@ -462,9 +473,9 @@ export default function App() {
           <span className="font-mono text-[10px] bg-[var(--bg)] border border-[var(--border)] px-1.5 py-0.2 rounded text-[#161A1D]">R</span> Reset
         </div>
 
-        <div className="flex items-center gap-2 font-mono text-[10px] text-[#5C6670] tabular-nums whitespace-nowrap">
-          <span>ISA Std Atm</span>
-          <span className="text-[var(--border)]" aria-hidden="true">·</span>
+        <div className="flex items-center gap-1.5 sm:gap-2 font-mono text-[10px] text-[#5C6670] tabular-nums whitespace-nowrap">
+          <span className="hidden min-[380px]:inline">ISA Std Atm</span>
+          <span className="hidden min-[380px]:inline text-[var(--border)]" aria-hidden="true">·</span>
           <span>FL{params.altitude_ft.toLocaleString()}</span>
           <span className="text-[var(--border)]" aria-hidden="true">·</span>
           <span>ρ = {telemetry.air_density_kg_m3.toFixed(3)} kg/m³</span>

@@ -10,23 +10,23 @@ export const AeroTheoryModal: React.FC<AeroTheoryModalProps> = ({ isOpen, onClos
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0D1114]/60 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-[#0D1114]/60 backdrop-blur-sm">
       <div 
-        className="w-full max-w-3xl max-h-[90vh] bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        className="w-full max-w-3xl h-[100dvh] sm:h-auto max-h-[100dvh] sm:max-h-[90vh] bg-[var(--surface)] border-0 sm:border border-[var(--border)] rounded-none sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col"
         role="dialog"
         aria-modal="true"
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-[var(--border)] flex items-center justify-between bg-[var(--surface)] sticky top-0">
-          <div className="flex items-center gap-2.5">
-            <BookOpen className="w-5 h-5 text-[#1769AA]" />
-            <h2 className="text-base font-bold text-[#161A1D] tracking-wide font-sans">
+        <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-[var(--border)] flex items-center justify-between gap-2 bg-[var(--surface)] sticky top-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <BookOpen className="w-5 h-5 text-[#1769AA] shrink-0" />
+            <h2 className="text-sm sm:text-base font-bold text-[#161A1D] tracking-wide font-sans truncate">
               Aerodynamics &amp; Vortex Flow Physics Guide
             </h2>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-[#5C6670] hover:text-[#161A1D] hover:bg-[var(--bg)] transition-colors"
+            className="p-2 sm:p-1.5 rounded-lg text-[#5C6670] hover:text-[#161A1D] hover:bg-[var(--bg)] transition-colors shrink-0"
             aria-label="Close guide"
           >
             <X className="w-5 h-5" />
@@ -34,7 +34,7 @@ export const AeroTheoryModal: React.FC<AeroTheoryModalProps> = ({ isOpen, onClos
         </div>
 
         {/* Content */}
-        <div className="px-6 py-5 overflow-y-auto space-y-5 text-sm text-[#5C6670] leading-relaxed font-sans custom-scrollbar">
+        <div className="px-4 py-4 sm:px-6 sm:py-5 overflow-y-auto overscroll-contain space-y-4 sm:space-y-5 text-sm text-[#5C6670] leading-relaxed font-sans custom-scrollbar flex-1">
           {/* Section 1: Vortex & Vertex Flow Law */}
           <div className="p-4 rounded-xl bg-[var(--bg)] border border-[var(--border)]">
             <div className="flex items-center gap-2 text-[#1769AA] font-semibold mb-2">
@@ -129,10 +129,10 @@ export const AeroTheoryModal: React.FC<AeroTheoryModalProps> = ({ isOpen, onClos
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3.5 border-t border-[var(--border)] bg-[var(--surface)] flex justify-end">
+        <div className="px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-3.5 border-t border-[var(--border)] bg-[var(--surface)] flex justify-end shrink-0">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-lg bg-[#1769AA] hover:bg-[#145a92] text-white text-xs font-semibold transition-colors"
+            className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg bg-[#1769AA] hover:bg-[#145a92] text-white text-xs font-semibold transition-colors"
           >
             Close Guide
           </button>

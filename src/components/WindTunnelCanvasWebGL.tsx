@@ -1007,9 +1007,9 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
   const currentMeta = GLB_MODEL_REGISTRY[params.modelType];
 
   return (
-    <div className="relative w-full h-full min-h-[420px] rounded-xl overflow-hidden border border-[var(--border)] bg-[#0D1114] shadow-[var(--shadow-tech)] flex flex-col group select-none">
+    <div className="relative w-full h-full min-h-[220px] sm:min-h-[360px] lg:min-h-[420px] rounded-xl overflow-hidden border border-[var(--border)] bg-[#0D1114] shadow-[var(--shadow-tech)] flex flex-col group select-none">
       {/* Three.js Canvas Container */}
-      <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+      <div ref={mountRef} className="w-full h-full touch-none cursor-grab active:cursor-grabbing" />
 
       {/* WebGL2 Unavailable Fallback Overlay */}
       {webglUnavailable && (
@@ -1060,19 +1060,19 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
       )}
 
       {/* Top Header Overlay (Solid #151A1E surface, zero backdrop-blur over WebGL) */}
-      <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none z-10">
-        <div className="flex items-center gap-2 bg-[#151A1E]/95 px-3 py-1.5 rounded-lg border border-slate-700/80 pointer-events-auto text-xs">
-          <span className="font-semibold text-slate-100 whitespace-nowrap">
+      <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2 pointer-events-none z-10">
+        <div className="flex items-center gap-1.5 sm:gap-2 bg-[#151A1E]/95 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg border border-slate-700/80 pointer-events-auto text-[11px] sm:text-xs max-w-[56vw] sm:max-w-none overflow-hidden">
+          <span className="font-semibold text-slate-100 truncate">
             {currentMeta ? currentMeta.name : AIRCRAFT_MODELS[params.modelType].name}
           </span>
-          <span className="text-slate-500" aria-hidden="true">·</span>
-          <span className="text-[11px] font-mono text-sky-300 whitespace-nowrap">
+          <span className="hidden sm:inline text-slate-500" aria-hidden="true">·</span>
+          <span className="hidden sm:inline text-[11px] font-mono text-sky-300 whitespace-nowrap">
             Biot-Savart Vortex + Vertex Flow
           </span>
           {telemetry.isStalled && (
             <>
               <span className="text-slate-500" aria-hidden="true">·</span>
-              <span className="text-[11px] font-bold text-red-400 flex items-center gap-1 whitespace-nowrap">
+              <span className="text-[10px] sm:text-[11px] font-bold text-red-400 flex items-center gap-1 whitespace-nowrap shrink-0">
                 <AlertTriangle className="w-3 h-3" />
                 STALL
               </span>
@@ -1081,11 +1081,11 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
         </div>
 
         {/* Top-Right Quick Action Toolbar */}
-        <div className="flex items-center gap-1.5 pointer-events-auto">
+        <div className="flex items-center gap-1 sm:gap-1.5 pointer-events-auto shrink-0">
           {onOpenModelInspector && (
             <button
               onClick={onOpenModelInspector}
-              className="px-3 py-1.5 rounded-lg bg-[#151A1E]/95 hover:bg-slate-800 border border-slate-700/80 text-slate-100 text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
+              className="p-1.5 sm:px-3 sm:py-1.5 rounded-lg bg-[#151A1E]/95 hover:bg-slate-800 border border-slate-700/80 text-slate-100 text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
               title="Open 3D CAD Asset Inspector"
             >
               <Box className="w-3.5 h-3.5 text-sky-400" />
@@ -1128,14 +1128,14 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
       </div>
 
       {/* Bottom Floating Controls Dock */}
-      <div className="absolute bottom-2.5 left-2.5 right-2.5 flex flex-wrap items-center justify-between gap-1.5 pointer-events-none z-10">
+      <div className="absolute bottom-2 left-2 right-2 flex flex-wrap items-center justify-between gap-1.5 pointer-events-none z-10">
         {/* Camera Presets & Turntable */}
-        <div className="flex items-center gap-0.5 sm:gap-1 bg-[#151A1E]/95 p-1 rounded-lg border border-slate-700/80 pointer-events-auto">
+        <div className="flex items-center gap-0.5 sm:gap-1 bg-[#151A1E]/95 p-0.5 sm:p-1 rounded-lg border border-slate-700/80 pointer-events-auto max-w-full overflow-x-auto">
           {(['iso', 'side', 'top', 'front', 'chase'] as const).map((p) => (
             <button
               key={p}
               onClick={() => setCameraPreset(p)}
-              className={`px-2 sm:px-2.5 py-1 rounded-md text-[11px] sm:text-xs font-medium capitalize transition-colors whitespace-nowrap shrink-0 ${
+              className={`px-1.5 sm:px-2.5 py-1 rounded-md text-[10px] sm:text-xs font-medium capitalize transition-colors whitespace-nowrap shrink-0 ${
                 activePreset === p && !isAutoOrbit
                   ? 'bg-[#1769AA] text-white'
                   : 'text-slate-300 hover:text-white hover:bg-slate-800/70'
@@ -1145,11 +1145,11 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
             </button>
           ))}
 
-          <div className="w-px h-4 bg-slate-700 mx-0.5" />
+          <div className="w-px h-3.5 bg-slate-700 mx-0.5 shrink-0" />
 
           <button
             onClick={() => setIsAutoOrbit(!isAutoOrbit)}
-            className={`px-2 sm:px-2.5 py-1 rounded-md text-[11px] sm:text-xs font-medium flex items-center gap-1 transition-colors whitespace-nowrap shrink-0 ${
+            className={`px-1.5 sm:px-2.5 py-1 rounded-md text-[10px] sm:text-xs font-medium flex items-center gap-1 transition-colors whitespace-nowrap shrink-0 ${
               isAutoOrbit
                 ? 'bg-[#1769AA] text-white'
                 : 'text-slate-300 hover:text-white hover:bg-slate-800/70'
@@ -1162,7 +1162,7 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
         </div>
 
         {/* Shading & Heatmap Overlays */}
-        <div className="flex items-center gap-0.5 sm:gap-1 bg-[#151A1E]/95 p-1 rounded-lg border border-slate-700/80 pointer-events-auto">
+        <div className="flex items-center gap-0.5 sm:gap-1 bg-[#151A1E]/95 p-0.5 sm:p-1 rounded-lg border border-slate-700/80 pointer-events-auto max-w-full overflow-x-auto">
           {(
             [
               { id: 'pbr', label: 'PBR' },
@@ -1178,7 +1178,7 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
                 if (s.id === 'cfdHeatmap') onParamChange('show_heatmap', true);
                 else if (s.id === 'pbr') onParamChange('show_heatmap', false);
               }}
-              className={`px-2 sm:px-2.5 py-1 rounded-md text-[11px] sm:text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+              className={`px-1.5 sm:px-2.5 py-1 rounded-md text-[10px] sm:text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
                 activeShading === s.id
                   ? 'bg-[#1769AA] text-white'
                   : 'text-slate-300 hover:text-white hover:bg-slate-800/70'
@@ -1192,16 +1192,16 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
 
       {/* Floating Spatial Force Readout */}
       {params.show_pressure_vectors && (
-        <div className="absolute top-14 left-3 pointer-events-none z-10 flex flex-col gap-1 font-mono tabular-nums text-[11px] bg-[#151A1E]/92 px-3 py-2 rounded-lg border border-slate-700/80">
-          <div className="flex items-center justify-between gap-3 text-emerald-300">
+        <div className="absolute top-12 sm:top-14 left-2.5 sm:left-3 pointer-events-none z-10 flex flex-col gap-0.5 sm:gap-1 font-mono tabular-nums text-[10px] sm:text-[11px] bg-[#151A1E]/92 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg border border-slate-700/80">
+          <div className="flex items-center justify-between gap-2.5 sm:gap-3 text-emerald-300">
             <span>LIFT</span>
             <span className="font-semibold">{(telemetry.lift_N / 1000).toFixed(1)} kN</span>
           </div>
-          <div className="flex items-center justify-between gap-3 text-amber-300">
+          <div className="flex items-center justify-between gap-2.5 sm:gap-3 text-amber-300">
             <span>DRAG</span>
             <span className="font-semibold">{(telemetry.drag_N / 1000).toFixed(1)} kN</span>
           </div>
-          <div className="flex items-center justify-between gap-3 text-sky-300">
+          <div className="flex items-center justify-between gap-2.5 sm:gap-3 text-sky-300">
             <span>L/D</span>
             <span className="font-semibold">{telemetry.ldRatio.toFixed(2)}</span>
           </div>

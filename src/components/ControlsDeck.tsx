@@ -137,13 +137,13 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
   return (
     <div className="w-full flex flex-col gap-3.5">
       {/* 1. Aircraft Model Selection */}
-      <div className="antigravity-glass p-4 rounded-xl flex flex-col gap-3">
+      <div className="antigravity-glass p-3 sm:p-4 rounded-xl flex flex-col gap-3">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA]">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-6 h-6 rounded-lg bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA] shrink-0">
               <Plane className="w-3.5 h-3.5" />
             </div>
-            <span className="text-xs font-bold uppercase tracking-wider text-[#161A1D] font-sans">
+            <span className="text-xs font-bold uppercase tracking-wider text-[#161A1D] font-sans truncate">
               Model Selection
             </span>
           </div>
@@ -153,7 +153,7 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
         </div>
 
         {/* Aircraft Model Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 min-[340px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2">
           {(Object.keys(AIRCRAFT_MODELS) as AircraftModelType[]).map((type) => {
             const config = AIRCRAFT_MODELS[type];
             const isSelected = params.modelType === type;
@@ -253,7 +253,7 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
       {/* 2. Interactive Primary Flight Sliders */}
       <div className="flex flex-col gap-3.5">
         {/* Attitude & Control Surfaces */}
-        <div className="antigravity-glass p-4 rounded-xl flex flex-col gap-3">
+        <div className="antigravity-glass p-3 sm:p-4 rounded-xl flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="w-6 h-6 rounded-lg bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA]">
@@ -299,7 +299,7 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
               }}
               className="w-full accent-[#1769AA] cursor-pointer h-2 bg-[#E4E9ED] rounded-lg"
             />
-            <div className="grid grid-cols-6 gap-1 text-[11px] text-[#5C6670] mt-0.5 font-mono tabular-nums">
+            <div className="grid grid-cols-3 min-[360px]:grid-cols-6 gap-1 text-[11px] text-[#5C6670] mt-0.5 font-mono tabular-nums">
               {[-10, 0, 5, 12, 18, 25].map((val) => (
                 <button
                   key={val}
@@ -307,7 +307,7 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
                     setIsAutoSweeping(false);
                     onParamChange('angle_of_attack', val);
                   }}
-                  className={`py-0.5 rounded text-center border transition-colors ${
+                  className={`py-1.5 sm:py-0.5 rounded text-center border transition-colors ${
                     Math.abs(params.angle_of_attack - val) < 0.6
                       ? 'bg-[var(--accent-light)] text-[#1769AA] border-[#1769AA]/40 font-semibold'
                       : 'border-transparent hover:text-[#161A1D] hover:bg-[var(--bg)]'
@@ -351,7 +351,7 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
         </div>
 
         {/* Atmospheric Flight Envelope */}
-        <div className="antigravity-glass p-4 rounded-xl flex flex-col gap-3">
+        <div className="antigravity-glass p-3 sm:p-4 rounded-xl flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-lg bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA]">
               <Wind className="w-3.5 h-3.5" />
@@ -414,21 +414,21 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
       </div>
 
       {/* 3. Visualization Toggles & Fluid Tuning */}
-      <div className="antigravity-glass p-4 rounded-xl flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA]">
+      <div className="antigravity-glass p-3 sm:p-4 rounded-xl flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-6 h-6 rounded-lg bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA] shrink-0">
               <Layers className="w-3.5 h-3.5" />
             </div>
-            <span className="text-xs font-bold uppercase tracking-wider text-[#161A1D] font-sans">
+            <span className="text-xs font-bold uppercase tracking-wider text-[#161A1D] font-sans truncate">
               Flow Overlays
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               onClick={onTogglePause}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors border ${
+              className={`px-2.5 py-1.5 sm:py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors border ${
                 isPaused
                   ? 'bg-[#1769AA] text-white border-[#1769AA]'
                   : 'bg-[var(--bg)] text-[#161A1D] border-[var(--border)] hover:border-[#1769AA]'
@@ -523,7 +523,7 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
       </div>
 
       {/* 4. One-Click Flight Scenarios */}
-      <div className="antigravity-glass p-4 rounded-xl flex flex-col gap-3">
+      <div className="antigravity-glass p-3 sm:p-4 rounded-xl flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 rounded-lg bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA]">
             <Flame className="w-3.5 h-3.5" />
@@ -533,7 +533,7 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
           </span>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 min-[340px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2">
           {presets.map((preset) => (
             <button
               key={preset.name}

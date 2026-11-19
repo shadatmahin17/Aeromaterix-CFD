@@ -9,6 +9,7 @@ import { ControlsDeck } from './components/ControlsDeck';
 import { AeroTheoryModal } from './components/AeroTheoryModal';
 import { ModelViewerModal } from './components/ModelViewerModal';
 import { probeWebGL2Support } from './utils/webglSupport';
+import { syncRuntimeSeoMetadata } from './utils/seo';
 import { 
   BookOpen, 
   RotateCcw, 
@@ -78,6 +79,11 @@ export default function App() {
     setIsPaused(false);
   };
 
+  // Sync canonical URL, OpenGraph URL, and JSON-LD at runtime
+  useEffect(() => {
+    syncRuntimeSeoMetadata();
+  }, []);
+
   // Keyboard Navigation & Simulator Hotkeys
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -134,6 +140,9 @@ export default function App() {
 
   return (
     <div className="h-screen h-[100dvh] w-screen overflow-hidden bg-[var(--bg)] text-[var(--text)] flex flex-col font-sans select-none selection:bg-[var(--accent-light)] selection:text-[var(--accent)]">
+      <h1 className="sr-only">
+        AeroLab - Interactive 3D Aircraft Wind Tunnel and Aerodynamics Simulator
+      </h1>
       {/* 1. TOP BAR — CFD WORKSTATION NAVIGATION */}
       <header className="h-12 sm:h-14 px-2 sm:px-4 border-b border-[var(--border)] bg-[var(--nav-bg)] backdrop-blur-md flex items-center justify-between gap-1.5 z-30 flex-shrink-0 shadow-[var(--shadow-tech)]">
         {/* Left Zone: Brand logo & flight status readout */}

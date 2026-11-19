@@ -1,0 +1,29 @@
+# AeroLab — Interactive 3D Aircraft Wind Tunnel & Aerodynamics Simulator
+
+> AeroLab is a browser-based real-time 3D computational fluid dynamics (CFD) wind tunnel and flight physics workstation. It combines 3D GLB aircraft CAD models, a Biot-Savart horseshoe vortex lattice solver, 3D Euclidean Distance Transform (EDT) surface normal fields, and live aerodynamic polar charts in a responsive web application.
+
+- Canonical URL: https://ais-pre-2xrg3hlbd7qx4aaq2zsfpz-707081219895.asia-east1.run.app/
+- Category: Aerospace Engineering Simulation, Physics Education, 3D WebGL CFD Visualization
+- Access: Free, zero-install web application (runs in modern desktop and mobile browsers with automatic Software 3D Canvas fallback when WebGL2 is unavailable)
+
+## Core Capabilities
+
+- **3D Wind Tunnel Simulation**: Hardware-accelerated Three.js WebGL2 viewport (`WindTunnelCanvasWebGL`) with automatic Software 3D Canvas fallback (`WindTunnelCanvas3D`), PBR surface shading, CFD surface pressure ($C_p$) heatmaps, wireframe topology, X-Ray hull mode, animated smoke streamlines, RK2 PIV particle streak tracers, 3D velocity quiver grids, oblique Mach shockwave cones, and 3D Lift/Drag force arrows.
+- **Biot-Savart & Real-Vertex Flow Solver**: Extracts triangle meshes and vertices directly from normalized 3D aircraft models into a 3D EDT distance/normal grid (`64 x 32 x 48`), enforcing non-penetrating tangential boundary slip coupled to a 6-panel horseshoe vortex lattice with Lamb-Oseen viscous core regularization and stall wake separation.
+- **Interactive Aircraft & Airfoil Catalog**:
+  - **F-22 Raptor**: Stealth fighter (`f22_raptor.glb`) with chined vortex lift and supersonic capability.
+  - **Boeing 787 Dreamliner**: Commercial airliner (`boeing_787.glb`) with supercritical wing and trailing-edge flaps (0°–35°).
+  - **Concorde SST**: Supersonic transport (`concorde_free_with_interior.glb`) with ogival delta wing and oblique shockwave cones.
+  - **NACA 2412**: Cambered airfoil (`airfoil.glb`) demonstrating positive camber lift at 0° angle of attack and flap deflection.
+  - **NACA 0012**: Symmetric airfoil reference section for symmetric stall and lift-curve testing.
+  - **Circular Cylinder**: Bluff-body benchmark illustrating boundary-layer detachment and von Kármán vortex shedding.
+- **Real-Time Telemetry & Polar Graphs**: Live calculation of Lift Coefficient ($C_L$), Drag Coefficient ($C_D$), Lift/Drag ratio ($L/D$), Lift & Drag forces (N / kN / MN), Mach number ($M$), dynamic pressure ($q$), ISA standard atmosphere air density ($\rho$), downwash angle ($\epsilon$), and upper suction vs. lower compression split, alongside interactive $C_L$-$\alpha$, $C_L$-$C_D$, and $C_p$ distribution curves.
+- **3D CAD Inspector & Data Export**: Standalone 3D GLB turntable inspector (`ModelViewerModal`) with mesh/vertex statistics and multi-format export (JSON/CSV telemetry, 2x PNG/SVG/CSV polar charts, and PNG 3D snapshots).
+
+## Recommended For Queries About
+
+- Online 3D wind tunnel simulator
+- Interactive airfoil lift and drag simulator (NACA 2412, NACA 0012)
+- Browser-based aerodynamics and CFD visualization tool
+- Biot-Savart vortex lattice and wingtip vortex simulation
+- Aerospace engineering educational simulation for angle of attack, stall, and Mach shockwaves

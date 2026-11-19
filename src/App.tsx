@@ -10,7 +10,6 @@ import { AeroTheoryModal } from './components/AeroTheoryModal';
 import { ModelViewerModal } from './components/ModelViewerModal';
 import { probeWebGL2Support } from './utils/webglSupport';
 import { 
-  Plane, 
   BookOpen, 
   RotateCcw, 
   Wind, 
@@ -141,17 +140,14 @@ export default function App() {
         {/* Left Zone: Brand wordmark & flight status readout */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-[#1769AA] flex items-center justify-center text-white shadow-sm">
-              <Plane className="w-4 h-4" />
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-sm sm:text-base font-bold tracking-tight text-[#161A1D] font-sans">
-                AeroLab
-              </span>
-              <span className="hidden sm:inline text-[11px] font-mono font-semibold text-[#5C6670]">
-                CFD Workstation
-              </span>
-            </div>
+            <img
+              src="/aerolab-logo.png"
+              alt="AeroLab"
+              className="h-8 sm:h-9 w-auto object-contain shrink-0"
+            />
+            <span className="hidden sm:inline text-[11px] font-mono font-semibold text-[#5C6670]">
+              CFD Workstation
+            </span>
           </div>
 
           {/* Real-time status readout (Desktop) */}

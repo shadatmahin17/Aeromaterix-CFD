@@ -203,12 +203,12 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
                   </span>
                   <span className="text-[10px] font-mono text-[#1769AA] font-semibold">
                     {params.modelType === 'airliner'
-                      ? '11.0 MB'
+                      ? '3.9 MB'
                       : params.modelType === 'concorde'
-                      ? '5.8 MB'
+                      ? '755 KB'
                       : params.modelType === 'naca2412'
                       ? '11.4 KB'
-                      : '26.5 MB'}
+                      : '741 KB'}
                   </span>
                 </div>
                 <p className="text-[11px] text-[#5C6670]">

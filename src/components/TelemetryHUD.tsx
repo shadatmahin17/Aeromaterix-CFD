@@ -6,23 +6,23 @@ import {
   downloadTelemetryCSV,
   ExportDataPayload,
 } from '../utils/telemetryExport';
-import { 
-  Gauge, 
-  Wind, 
-  Activity, 
-  ArrowUpRight, 
-  ShieldAlert, 
-  CheckCircle2, 
-  Download, 
-  ArrowDown, 
+import {
+  Gauge,
+  Wind,
+  Pulse,
+  ArrowUpRight,
+  ShieldWarning,
+  CheckCircle,
+  DownloadSimple,
+  ArrowDown,
   ArrowUp,
   SlidersHorizontal,
-  ChevronDown,
-  ChevronUp,
+  CaretDown,
+  CaretUp,
   Flame,
-  FileCode2,
-  FileSpreadsheet
-} from 'lucide-react';
+  FileCode,
+  FileCsv,
+} from '@phosphor-icons/react';
 
 interface TelemetryHUDProps {
   telemetry: AeroTelemetry;
@@ -65,12 +65,12 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
 
   // Lift Generation Physics Calculation
   const suctionPercentage = telemetry.isStalled
-    ? Math.max(25, 45 - Math.max(0, aoaDeg - currentModel.stallAngle) * 2)
+    ? Math.max(25, 45 - Math.max(0, Math.abs(aoaDeg) - currentModel.stallAngle) * 2)
     : Math.min(88, 72 + Math.max(0, aoaDeg) * 0.5);
   const compressionPercentage = 100 - suctionPercentage;
 
   // Downwash angle epsilon = 2 * CL / (pi * AR) in radians
-  const aspectRatio = Math.pow(currentModel.wingspan, 2) / (currentModel.wingspan * currentModel.chord);
+  const aspectRatio = currentModel.wingspan / currentModel.chord;
   const downwashRad = (2 * Math.max(0, telemetry.cl)) / (Math.PI * Math.max(2, aspectRatio));
   const downwashDeg = (downwashRad * 180) / Math.PI;
 
@@ -107,13 +107,13 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
       {/* HUD Header Toolbar */}
       <div className="flex items-center justify-between gap-2 px-0.5">
         <div className="flex items-center gap-1.5 min-w-0">
-          <Activity className="w-3.5 h-3.5 text-[#1769AA] shrink-0" />
+          <Pulse weight="duotone" className="w-4 h-4 text-[#1769AA] shrink-0" />
           <span className="text-xs font-bold uppercase tracking-wider text-[#161A1D] truncate">
             Telemetry &amp; Forces
           </span>
           {exportSuccessMsg && (
             <span className="ml-1 px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-mono flex items-center gap-1 shrink-0">
-              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+              <CheckCircle weight="duotone" className="w-3.5 h-3.5 text-emerald-600" />
               <span>{exportSuccessMsg}</span>
             </span>
           )}
@@ -125,9 +125,9 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
             className="px-2 py-1 rounded-lg bg-[var(--surface)] border border-[var(--border)] hover:border-[#1769AA] text-[11px] font-semibold text-[#161A1D] flex items-center gap-1 transition-colors shadow-sm cursor-pointer"
             title="Toggle lift breakdown parameters"
           >
-            <SlidersHorizontal className="w-3 h-3 text-[#1769AA]" />
+            <SlidersHorizontal weight="duotone" className="w-3.5 h-3.5 text-[#1769AA]" />
             <span>{showLiftDetails ? 'Less' : 'Lift Details'}</span>
-            {showLiftDetails ? <ChevronUp className="w-3 h-3 text-[#5C6670]" /> : <ChevronDown className="w-3 h-3 text-[#5C6670]" />}
+            {showLiftDetails ? <CaretUp weight="bold" className="w-3 h-3 text-[#5C6670]" /> : <CaretDown weight="bold" className="w-3 h-3 text-[#5C6670]" />}
           </button>
 
           {/* Dedicated Export Dropdown Menu */}
@@ -139,9 +139,9 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
               aria-expanded={showExportMenu}
               aria-haspopup="true"
             >
-              <Download className="w-3 h-3" />
+              <DownloadSimple weight="bold" className="w-3.5 h-3.5" />
               <span>Export</span>
-              <ChevronDown className={`w-3 h-3 text-white/80 transition-transform duration-200 ${showExportMenu ? 'rotate-180' : ''}`} />
+              <CaretDown weight="bold" className={`w-3 h-3 text-white/80 transition-transform duration-200 ${showExportMenu ? 'rotate-180' : ''}`} />
             </button>
 
             {showExportMenu && (
@@ -156,8 +156,8 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
                   onClick={handleExportJSON}
                   className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-[var(--bg)] flex items-start gap-2.5 text-[#161A1D] group transition-colors cursor-pointer"
                 >
-                  <div className="w-7 h-7 rounded-md bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-700 shrink-0">
-                    <FileCode2 className="w-4 h-4" />
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500/18 to-orange-500/10 ring-1 ring-amber-500/25 flex items-center justify-center text-amber-700 shrink-0">
+                    <FileCode weight="duotone" className="w-4 h-4" />
                   </div>
                   <div className="flex flex-col">
                     <span className="text-xs font-semibold text-[#161A1D] flex items-center gap-1.5">
@@ -174,8 +174,8 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
                   onClick={handleExportCSV}
                   className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-[var(--bg)] flex items-start gap-2.5 text-[#161A1D] group transition-colors cursor-pointer"
                 >
-                  <div className="w-7 h-7 rounded-md bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
-                    <FileSpreadsheet className="w-4 h-4" />
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-500/18 to-teal-500/10 ring-1 ring-emerald-500/25 flex items-center justify-center text-emerald-700 shrink-0">
+                    <FileCsv weight="duotone" className="w-4 h-4" />
                   </div>
                   <div className="flex flex-col">
                     <span className="text-xs font-semibold text-[#161A1D] flex items-center gap-1.5">
@@ -199,8 +199,8 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
         <div className="antigravity-card p-2.5 rounded-xl flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-wider font-sans text-[#5C6670]">Lift Coeff</span>
-            <div className="w-5 h-5 rounded-md bg-[var(--accent-light)] border border-[#1769AA]/20 flex items-center justify-center text-[#1769AA]">
-              <ArrowUpRight className="w-3 h-3" />
+            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-[#1769AA]/16 to-[#0EA5E9]/14 ring-1 ring-[#1769AA]/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] flex items-center justify-center text-[#1769AA]">
+              <ArrowUpRight weight="bold" className="w-3.5 h-3.5" />
             </div>
           </div>
           <div className="my-1.5 flex items-baseline gap-1">
@@ -219,8 +219,8 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
         <div className="antigravity-card p-2.5 rounded-xl flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-wider font-sans text-[#5C6670]">Drag Coeff</span>
-            <div className="w-5 h-5 rounded-md bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-700">
-              <Wind className="w-3 h-3" />
+            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-amber-500/18 to-orange-500/12 ring-1 ring-amber-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] flex items-center justify-center text-amber-700">
+              <Wind weight="duotone" className="w-3.5 h-3.5" />
             </div>
           </div>
           <div className="my-1.5 flex items-baseline gap-1">
@@ -239,8 +239,8 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
         <div className="antigravity-card p-2.5 rounded-xl flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-wider font-sans text-[#5C6670]">Efficiency</span>
-            <div className="w-5 h-5 rounded-md bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700">
-              <Activity className="w-3 h-3" />
+            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-emerald-500/18 to-teal-500/12 ring-1 ring-emerald-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] flex items-center justify-center text-emerald-700">
+              <Pulse weight="duotone" className="w-3.5 h-3.5" />
             </div>
           </div>
           <div className="my-1.5 flex items-baseline gap-1">
@@ -259,8 +259,8 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
         <div className="antigravity-card p-2.5 rounded-xl flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-wider font-sans text-[#5C6670]">Mach Regime</span>
-            <div className="w-5 h-5 rounded-md bg-[var(--accent-light)] border border-[#1769AA]/20 flex items-center justify-center text-[#1769AA]">
-              <Gauge className="w-3 h-3" />
+            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-[#1769AA]/16 to-[#0EA5E9]/14 ring-1 ring-[#1769AA]/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] flex items-center justify-center text-[#1769AA]">
+              <Gauge weight="duotone" className="w-3.5 h-3.5" />
             </div>
           </div>
           <div className="my-1.5 flex items-baseline gap-1">
@@ -278,8 +278,8 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
         <div className="antigravity-card p-2.5 rounded-xl flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-wider font-sans text-[#5C6670]">Dyn Pressure</span>
-            <div className="w-5 h-5 rounded-md bg-[var(--bg)] border border-[var(--border)] flex items-center justify-center text-[#5C6670]">
-              <Flame className="w-3 h-3" />
+            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-slate-500/12 to-slate-400/8 ring-1 ring-slate-300/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] flex items-center justify-center text-[#475569]">
+              <Flame weight="duotone" className="w-3.5 h-3.5" />
             </div>
           </div>
           <div className="my-1.5 flex items-baseline gap-1">
@@ -305,9 +305,9 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-wider font-sans text-[#5C6670]">Flow State</span>
             {telemetry.isStalled ? (
-              <ShieldAlert className="w-3.5 h-3.5 text-red-600" />
+              <ShieldWarning weight="duotone" className="w-4 h-4 text-red-600" />
             ) : (
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <CheckCircle weight="duotone" className="w-4 h-4 text-emerald-600" />
             )}
           </div>
           <div className="my-1.5 flex items-baseline gap-1">
@@ -332,9 +332,9 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
       {showLiftDetails && (
         <div className="antigravity-glass p-3 sm:p-3.5 rounded-xl flex flex-col gap-3">
           <div className="flex items-center justify-between gap-1 border-b border-[var(--border)] pb-2">
-            <div className="flex items-center gap-1.5">
-              <div className="w-5 h-5 rounded-md bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA]">
-                <ArrowUp className="w-3 h-3" />
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-[#1769AA]/16 to-[#0EA5E9]/14 ring-1 ring-[#1769AA]/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] flex items-center justify-center text-[#1769AA]">
+                <ArrowUp weight="bold" className="w-3.5 h-3.5" />
               </div>
               <span className="text-xs font-bold uppercase tracking-wider text-[#161A1D] font-sans">
                 Lift Distribution
@@ -385,7 +385,7 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
             <div className="grid grid-cols-2 gap-2">
               <div className="p-2.5 rounded-lg bg-[var(--bg)] border border-[var(--border)] flex flex-col justify-between">
                 <div className="flex items-center gap-1.5 text-[#5C6670]">
-                  <ArrowDown className="w-3 h-3 text-[#1769AA]" />
+                  <ArrowDown weight="bold" className="w-3.5 h-3.5 text-[#1769AA]" />
                   <span className="text-[10px] font-medium">Downwash (ε):</span>
                 </div>
                 <span className="font-mono tabular-nums text-[#1769AA] font-bold text-sm mt-1">
@@ -395,7 +395,7 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
 
               <div className="p-2.5 rounded-lg bg-[var(--bg)] border border-[var(--border)] flex flex-col justify-between">
                 <div className="flex items-center gap-1.5 text-[#5C6670]">
-                  <ArrowUp className="w-3 h-3 text-emerald-600" />
+                  <ArrowUp weight="bold" className="w-3.5 h-3.5 text-emerald-600" />
                   <span className="text-[10px] font-medium">Vertical Lift:</span>
                 </div>
                 <span className={`font-mono tabular-nums font-bold text-sm mt-1 ${

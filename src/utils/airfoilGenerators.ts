@@ -8,6 +8,7 @@ export const AIRCRAFT_MODELS: Record<AircraftModelType, AircraftModelConfig> = {
     description: 'Stealth air dominance fighter with chined forebody, razor-thin diamond wing section, and vortex lift at high AoA.',
     wingspan: 13.56,
     chord: 4.8,
+    sweepDeg: 42,
     stallAngle: 22,
     cl0: 0.12,
     clMax: 1.85,
@@ -24,6 +25,7 @@ export const AIRCRAFT_MODELS: Record<AircraftModelType, AircraftModelConfig> = {
     description: 'Transonic widebody airliner with supercritical high-lift cambered wing section and underslung high-bypass turbofan.',
     wingspan: 60.1,
     chord: 6.5,
+    sweepDeg: 32,
     stallAngle: 15,
     cl0: 0.38,
     clMax: 2.25,
@@ -40,8 +42,11 @@ export const AIRCRAFT_MODELS: Record<AircraftModelType, AircraftModelConfig> = {
     description: 'Classic cambered aviation airfoil (Cessna 172). 2% max camber at 40% chord with 12% thickness. Positive lift at 0° AoA.',
     wingspan: 11.0,
     chord: 1.6,
+    sweepDeg: 0,
     stallAngle: 16,
-    cl0: 0.28,
+    // 2D section Cl0 ≈ 0.25 with α_{L=0} = -2.1°; 3D finite-wing CL(0) scales with CLα(AR, M) around α_{L=0}
+    cl0: 0.25,
+    alphaZeroLift: -2.1,
     clMax: 1.62,
     cd0: 0.008,
     flapCapable: true,
@@ -56,8 +61,10 @@ export const AIRCRAFT_MODELS: Record<AircraftModelType, AircraftModelConfig> = {
     description: 'Zero camber symmetrical airfoil used on aerobatic aircraft and helicopter rotor blades. 0 lift at 0° AoA.',
     wingspan: 10.0,
     chord: 1.5,
+    sweepDeg: 0,
     stallAngle: 15,
     cl0: 0.0,
+    alphaZeroLift: 0.0,
     clMax: 1.45,
     cd0: 0.007,
     flapCapable: true,
@@ -72,6 +79,7 @@ export const AIRCRAFT_MODELS: Record<AircraftModelType, AircraftModelConfig> = {
     description: 'Slender ogival delta wing optimized for Mach 2.04 cruise. Sharp leading edge producing sharp Mach shockwaves.',
     wingspan: 25.6,
     chord: 9.2,
+    sweepDeg: 55,
     stallAngle: 19,
     cl0: 0.05,
     clMax: 1.40,
@@ -88,8 +96,10 @@ export const AIRCRAFT_MODELS: Record<AircraftModelType, AircraftModelConfig> = {
     description: 'Classic fluid dynamics baseline object showcasing symmetric boundary layer separation and von Kármán vortex streets.',
     wingspan: 5.0,
     chord: 2.0,
+    sweepDeg: 0,
     stallAngle: 0,
     cl0: 0.0,
+    alphaZeroLift: 0.0,
     clMax: 0.2,
     cd0: 1.15,
     flapCapable: false,
@@ -98,26 +108,46 @@ export const AIRCRAFT_MODELS: Record<AircraftModelType, AircraftModelConfig> = {
 };
 
 /**
- * Standard atmosphere calculations at given altitude in feet
+ * International Standard Atmosphere (ISA) calculations at given altitude in feet,
+ * including Sutherland's law dynamic viscosity μ(T).
  */
 export function getAtmosphere(altitude_ft: number) {
   const alt_m = Math.max(0, Math.min(altitude_ft * 0.3048, 16000));
   const T0 = 288.15; // Sea level standard temp in K
   const P0 = 101325; // Sea level pressure in Pa
-  const L = 0.0065; // Temperature lapse rate K/m
-  const R = 287.058; // Specific gas constant
+  const L = 0.0065; // Troposphere temperature lapse rate K/m
+  const R = 287.058; // Specific gas constant J/(kg·K)
   const gamma = 1.4; // Adiabatic index
+  const g0 = 9.80665; // Standard gravity m/s^2
+  const tropopause_m = 11000;
 
-  const T = T0 - L * alt_m;
-  const P = P0 * Math.pow(1 - (L * alt_m) / T0, 5.25588);
+  let T: number;
+  let P: number;
+  if (alt_m <= tropopause_m) {
+    T = T0 - L * alt_m;
+    P = P0 * Math.pow(T / T0, 5.25588);
+  } else {
+    const T11 = T0 - L * tropopause_m;
+    const P11 = P0 * Math.pow(T11 / T0, 5.25588);
+    T = T11;
+    P = P11 * Math.exp((-g0 * (alt_m - tropopause_m)) / (R * T11));
+  }
+
   const rho = P / (R * T); // kg/m^3
   const speedOfSound = Math.sqrt(gamma * R * T); // m/s
+
+  // Sutherland's formula for dynamic viscosity of air (Pa·s)
+  const mu0 = 1.7894e-5; // ISA sea-level reference viscosity at 288.15 K
+  const sutherlandC = 110.4; // K
+  const dynamicViscosity =
+    mu0 * Math.pow(T / T0, 1.5) * ((T0 + sutherlandC) / (T + sutherlandC));
 
   return {
     altitude_m: alt_m,
     temperature_K: T,
     pressure_Pa: P,
     density_kg_m3: rho,
+    dynamicViscosity_Pa_s: dynamicViscosity,
     speedOfSound_ms: speedOfSound,
     speedOfSound_kts: speedOfSound * 1.94384,
   };
@@ -412,6 +442,71 @@ export function isPointInPolygon(px: number, py: number, polygon: Point2D[]): bo
 }
 
 /**
+ * Returns positive and negative critical stall angles (as positive magnitudes in degrees).
+ * Symmetric zero-camber sections (e.g. NACA 0012 with 0 flaps) have symmetric stall angles.
+ */
+export function getEffectiveStallAngles(
+  type: AircraftModelType,
+  flapDeg = 0
+): { posStallAngle: number; negStallAngle: number } {
+  const config = AIRCRAFT_MODELS[type];
+  if (config.stallAngle <= 0) {
+    return { posStallAngle: 0, negStallAngle: 0 };
+  }
+  const effectiveFlap = config.flapCapable ? flapDeg : 0;
+  const posStallAngle = Math.max(4, config.stallAngle - (effectiveFlap > 15 ? 2.5 : 0));
+  const isSymmetric = config.cl0 === 0 && effectiveFlap === 0;
+  const negStallAngle = isSymmetric
+    ? posStallAngle
+    : Number((posStallAngle * 0.8).toFixed(1));
+  return { posStallAngle, negStallAngle };
+}
+
+/**
+ * Finite-wing lift curve slope CLα (per degree) incorporating aspect ratio,
+ * quarter-chord sweep, and compressibility (Helmbold + Prandtl-Glauert subsonic,
+ * smooth transonic blend, and Ackeret finite-wing supersonic theory).
+ */
+export function calculateFiniteWingLiftSlopePerDeg(
+  aspectRatio: number,
+  sweepDeg: number,
+  mach: number
+): number {
+  const ar = Math.max(1.5, aspectRatio);
+  const tanSweep = Math.tan((sweepDeg * Math.PI) / 180);
+
+  const helmboldSubsonicRad = (m: number) => {
+    const beta = Math.sqrt(Math.max(0.1, 1 - m * m));
+    const sweepTerm = 1 + (tanSweep * tanSweep) / (beta * beta);
+    return (
+      (2 * Math.PI * ar) /
+      (2 + Math.sqrt(4 + ar * ar * beta * beta * sweepTerm))
+    );
+  };
+
+  const ackeretSupersonicRad = (m: number) => {
+    const betaSup = Math.sqrt(Math.max(0.05, m * m - 1));
+    const arBeta = ar * betaSup;
+    const tipFactor = arBeta >= 1 ? 1 - 1 / (2 * arBeta) : 0.5 * arBeta;
+    return (4 / betaSup) * Math.max(0.25, tipFactor);
+  };
+
+  let slopePerRad: number;
+  if (mach <= 0.82) {
+    slopePerRad = helmboldSubsonicRad(mach);
+  } else if (mach >= 1.2) {
+    slopePerRad = ackeretSupersonicRad(mach);
+  } else {
+    const t = (mach - 0.82) / (1.2 - 0.82);
+    const w = 0.5 - 0.5 * Math.cos(Math.PI * t);
+    slopePerRad =
+      (1 - w) * helmboldSubsonicRad(0.82) + w * ackeretSupersonicRad(1.2);
+  }
+
+  return slopePerRad * (Math.PI / 180);
+}
+
+/**
  * Calculate Aerodynamic Lift, Drag, and Flow coefficients
  */
 export function calculateAeroTelemetry(
@@ -428,18 +523,25 @@ export function calculateAeroTelemetry(
   const rho = atmo.density_kg_m3;
   const dynP = 0.5 * rho * v_ms * v_ms; // dynamic pressure q (Pa)
 
-  // Reynolds number based on mean chord
-  const dynamicViscosityAir = 1.81e-5; // Pa.s
-  const reynolds = (rho * v_ms * config.chord) / dynamicViscosityAir;
+  // Reynolds number based on mean chord and Sutherland viscosity at altitude
+  const reynolds = (rho * v_ms * config.chord) / atmo.dynamicViscosity_Pa_s;
 
-  // Flap lift boost
-  const flapLiftBonus = config.flapCapable ? (flapDeg / 40) * 0.45 : 0;
-  const flapDragBonus = config.flapCapable ? Math.pow(flapDeg / 40, 2) * 0.08 : 0;
+  // Flap lift & parasite drag increments
+  const effectiveFlap = config.flapCapable ? Math.max(0, flapDeg) : 0;
+  const flapLiftBonus = config.flapCapable ? (effectiveFlap / 40) * 0.45 : 0;
+  const flapDragBonus = config.flapCapable ? Math.pow(effectiveFlap / 40, 2) * 0.08 : 0;
 
-  // Effective stall angle (flaps slightly reduce stall angle by ~2 deg but increase Clmax)
-  const effectiveStallAngle = config.stallAngle - (flapDeg > 15 ? 2.5 : 0);
-  const stallMargin = effectiveStallAngle - aoaDeg;
-  const isStalled = aoaDeg >= effectiveStallAngle || aoaDeg <= -effectiveStallAngle * 0.8;
+  const { posStallAngle, negStallAngle } = getEffectiveStallAngles(type, effectiveFlap);
+  const isStalled =
+    config.stallAngle > 0 &&
+    (aoaDeg >= posStallAngle || aoaDeg <= -negStallAngle);
+  const degPastStall = isStalled
+    ? Math.max(0, aoaDeg >= 0 ? aoaDeg - posStallAngle : -aoaDeg - negStallAngle)
+    : 0;
+  const stallMargin =
+    config.stallAngle > 0
+      ? Math.min(posStallAngle - aoaDeg, aoaDeg - -negStallAngle)
+      : 90;
 
   let cl = 0;
   let cd = config.cd0 + flapDragBonus;
@@ -449,33 +551,50 @@ export function calculateAeroTelemetry(
     cl = 0.05 * Math.sin((aoaDeg * Math.PI) / 180);
     cd = 1.15 + 0.1 * Math.sin(Math.abs(aoaDeg * 0.1));
   } else {
-    // Normal lift curve (linear thin-airfoil slope 2*pi per radian ~ 0.11 per degree)
-    const liftSlopePerDeg = 0.105;
-    const aoaEff = aoaDeg;
+    const aspectRatio = config.wingspan / config.chord;
+    const sweepDeg = config.sweepDeg ?? 0;
+    const liftSlopePerDeg = calculateFiniteWingLiftSlopePerDeg(aspectRatio, sweepDeg, mach);
+
+    // 2D thin-airfoil incompressible slope ~ 2*pi rad^-1 = 0.10966 / deg
+    const thinAirfoilSlopePerDeg = (2 * Math.PI * Math.PI) / 180;
+    const alphaZeroLift =
+      config.alphaZeroLift ?? -(config.cl0 / thinAirfoilSlopePerDeg);
+
+    const linearCl = (aoa: number) =>
+      liftSlopePerDeg * (aoa - alphaZeroLift) + flapLiftBonus;
+
+    const clMaxEff = config.clMax + flapLiftBonus;
+    const isSymmetric = config.cl0 === 0 && effectiveFlap === 0;
+    const clMinEff = isSymmetric ? -config.clMax : -config.clMax * 0.85 + flapLiftBonus * 0.5;
 
     if (!isStalled) {
-      cl = config.cl0 + flapLiftBonus + liftSlopePerDeg * aoaEff;
-      // Cap at clMax
-      cl = Math.min(config.clMax + flapLiftBonus, cl);
-    } else {
-      // Post-stall lift breakdown (flow separation)
-      const postStallFalloff = Math.max(0, aoaDeg - effectiveStallAngle);
-      const clPeak = config.clMax + flapLiftBonus;
-      cl = clPeak * Math.exp(-postStallFalloff * 0.08) * Math.cos((postStallFalloff * Math.PI) / 60);
+      cl = Math.max(clMinEff, Math.min(clMaxEff, linearCl(aoaDeg)));
+    } else if (aoaDeg >= 0) {
+      // Positive stall lift breakdown (continuous from attached peak at posStallAngle)
+      const clPeak = Math.min(clMaxEff, Math.max(0.2, linearCl(posStallAngle)));
+      cl =
+        clPeak *
+        Math.exp(-degPastStall * 0.08) *
+        Math.max(0, Math.cos((degPastStall * Math.PI) / 60));
       cl = Math.max(0.15, cl);
+    } else {
+      // Negative stall lift breakdown (continuous from negative peak; always strictly negative)
+      const clNegPeak = Math.max(clMinEff, Math.min(-0.2, linearCl(-negStallAngle)));
+      cl =
+        clNegPeak *
+        Math.exp(-degPastStall * 0.08) *
+        Math.max(0, Math.cos((degPastStall * Math.PI) / 60));
+      cl = Math.min(-0.15, cl);
     }
 
     // Induced drag: Cdi = Cl^2 / (pi * e * AR)
-    const aspectRatio = Math.pow(config.wingspan, 2) / (config.wingspan * config.chord);
     const oswaldEfficiency = 0.82;
     const cdi = Math.pow(cl, 2) / (Math.PI * oswaldEfficiency * Math.max(2, aspectRatio));
 
-    // Separation drag in stall
-    let separationDrag = 0;
-    if (isStalled) {
-      const degPastStall = Math.abs(aoaDeg) - effectiveStallAngle;
-      separationDrag = Math.min(0.85, Math.pow(degPastStall / 10, 1.8) * 0.35);
-    }
+    // Separation drag in stall (degPastStall is guaranteed >= 0)
+    const separationDrag = isStalled
+      ? Math.min(0.85, Math.pow(degPastStall / 10, 1.8) * 0.35)
+      : 0;
 
     // Transonic / Supersonic wave drag
     let waveDrag = 0;
@@ -491,8 +610,8 @@ export function calculateAeroTelemetry(
     cd = config.cd0 + flapDragBonus + cdi + separationDrag + waveDrag;
   }
 
-  // Lift and drag in Newtons: F = Cl * q * S
-  const wingArea = config.wingspan * config.chord * 0.85; // approximate planform area
+  // Lift and drag in Newtons: F = q * S * C
+  const wingArea = config.wingspan * config.chord;
   const lift_N = cl * dynP * wingArea;
   const drag_N = cd * dynP * wingArea;
   const ldRatio = cd > 0.0001 ? cl / cd : 0;
@@ -503,7 +622,7 @@ export function calculateAeroTelemetry(
     flowState = 'Supersonic Wave';
   } else if (mach >= 0.85) {
     flowState = 'Transonic Shock';
-  } else if (isStalled && aoaDeg > effectiveStallAngle + 4) {
+  } else if (isStalled && degPastStall > 4) {
     flowState = 'Deep Stall';
   } else if (isStalled) {
     flowState = 'Incipient Stall';

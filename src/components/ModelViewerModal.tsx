@@ -17,15 +17,15 @@ import { createSafeWebGLRenderer } from '../utils/webglSupport';
 import { PrecisionSlider } from './PrecisionSlider';
 import {
   X,
-  RotateCw,
-  Box,
+  ArrowsClockwise,
+  Cube,
   Camera,
   Sun,
   Wind,
-  Activity,
+  Pulse,
   Check,
-  Plane,
-} from 'lucide-react';
+  AirplaneTilt,
+} from '@phosphor-icons/react';
 
 interface ModelViewerModalProps {
   isOpen: boolean;
@@ -607,8 +607,8 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
         {/* Top Header */}
         <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 sm:px-6 sm:py-4 border-b border-[var(--border)] bg-[var(--surface)] shrink-0">
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA] shrink-0">
-              <Box className="w-4 h-4 sm:w-5 sm:h-5" />
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-[#1769AA]/16 via-[#1769AA]/10 to-[#0EA5E9]/18 ring-1 ring-[#1769AA]/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] flex items-center justify-center text-[#1769AA] shrink-0">
+              <Cube weight="duotone" className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
@@ -631,7 +631,7 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
               className="p-2 sm:px-3 sm:py-1.5 rounded-lg bg-[var(--bg)] hover:bg-[var(--accent-light)] text-[#161A1D] hover:text-[#1769AA] border border-[var(--border)] hover:border-[#1769AA] transition-colors flex items-center gap-1.5 text-xs font-semibold"
               title="Save PNG Snapshot"
             >
-              <Camera className="w-4 h-4 text-[#1769AA]" />
+              <Camera weight="duotone" className="w-4 h-4 text-[#1769AA]" />
               <span className="hidden sm:inline">Snapshot</span>
             </button>
             <button
@@ -639,15 +639,15 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
               className="p-2 rounded-lg text-[#5C6670] hover:text-[#161A1D] hover:bg-[var(--bg)] transition-colors border border-[var(--border)]"
               title="Close modal"
             >
-              <X className="w-5 h-5" />
+              <X weight="bold" className="w-4 h-4" />
             </button>
           </div>
         </div>
 
         {/* Model Tabs Bar */}
         <div className="px-3.5 sm:px-6 py-2 sm:py-2.5 bg-[var(--bg)] border-b border-[var(--border)] flex items-center gap-1.5 sm:gap-2 overflow-x-auto custom-scrollbar shrink-0">
-          <span className="hidden sm:flex text-xs font-mono font-bold text-[#5C6670] mr-2 items-center gap-1 shrink-0">
-            <Plane className="w-3.5 h-3.5 text-[#1769AA]" />
+          <span className="hidden sm:flex text-xs font-mono font-bold text-[#5C6670] mr-2 items-center gap-1.5 shrink-0">
+            <AirplaneTilt weight="duotone" className="w-4 h-4 text-[#1769AA]" />
             MODEL:
           </span>
           {[
@@ -755,7 +755,7 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
                       : 'text-slate-300 hover:text-white'
                   }`}
                 >
-                  <RotateCw className={`w-3.5 h-3.5 ${isAutoSpin ? 'animate-spin' : ''}`} />
+                  <ArrowsClockwise weight="bold" className={`w-3.5 h-3.5 ${isAutoSpin ? 'animate-spin' : ''}`} />
                   <span>Turntable</span>
                 </button>
                 <button
@@ -779,7 +779,7 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
             <div className="flex flex-col gap-2.5">
               <div className="flex items-center justify-between text-xs font-bold text-[#161A1D] uppercase tracking-wider font-sans">
                 <span className="flex items-center gap-1.5">
-                  <Activity className="w-3.5 h-3.5 text-[#1769AA]" />
+                  <Pulse weight="duotone" className="w-4 h-4 text-[#1769AA]" />
                   Surface Analysis
                 </span>
                 <span className="text-[10px] text-[#5C6670] font-mono">CFD Mesh</span>
@@ -842,7 +842,7 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
             {/* 2. Force Vectors Toggle */}
             <div className="flex flex-col gap-2">
               <span className="text-xs font-bold text-[#161A1D] uppercase tracking-wider font-sans flex items-center gap-1.5">
-                <Wind className="w-3.5 h-3.5 text-[#1769AA]" />
+                <Wind weight="duotone" className="w-4 h-4 text-[#1769AA]" />
                 3D Force Vectors
               </span>
               <button
@@ -853,7 +853,7 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
                     : 'bg-[var(--bg)] text-[#5C6670] border-[var(--border)] hover:text-[#161A1D]'
                 }`}
               >
-                <Activity className="w-3.5 h-3.5" />
+                <Pulse weight="duotone" className="w-4 h-4" />
                 <span>{showForceVectors ? 'Lift & Drag Vectors On' : 'Lift & Drag Vectors Off'}</span>
               </button>
             </div>
@@ -861,7 +861,7 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
             {/* 3. Studio Lighting Atmosphere */}
             <div className="flex flex-col gap-2">
               <span className="text-xs font-bold text-[#161A1D] uppercase tracking-wider font-sans flex items-center gap-1.5">
-                <Sun className="w-3.5 h-3.5 text-[#1769AA]" />
+                <Sun weight="duotone" className="w-4 h-4 text-[#1769AA]" />
                 Lighting Environment
               </span>
               <div className="grid grid-cols-2 gap-1.5">
@@ -913,7 +913,7 @@ export const ModelViewerModal: React.FC<ModelViewerModalProps> = ({
                   }}
                   className="w-full mt-2 py-2.5 rounded-lg bg-[#1769AA] hover:bg-[#145a92] text-white font-semibold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-sm"
                 >
-                  <Check className="w-4 h-4" />
+                  <Check weight="bold" className="w-4 h-4" />
                   <span>Apply to Wind Tunnel</span>
                 </button>
               )}

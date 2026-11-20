@@ -13,8 +13,10 @@ export interface AircraftModelConfig {
   description: string;
   wingspan: number; // meters
   chord: number; // meters
+  sweepDeg?: number; // quarter-chord sweep angle in degrees
   stallAngle: number; // degrees
-  cl0: number; // lift at 0 aoa
+  cl0: number; // nominal 2D section lift coefficient at 0 deg AoA
+  alphaZeroLift?: number; // zero-lift angle of attack in degrees
   clMax: number;
   cd0: number; // parasitic drag
   flapCapable: boolean;

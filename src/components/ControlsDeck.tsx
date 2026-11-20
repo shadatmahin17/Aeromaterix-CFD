@@ -1,26 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { SimulationParams, AircraftModelType } from '../types/aerodynamics';
-import { AIRCRAFT_MODELS, getAtmosphere } from '../utils/airfoilGenerators';
+import { AIRCRAFT_MODELS, getAtmosphere, getEffectiveStallAngles } from '../utils/airfoilGenerators';
 import { PrecisionSlider } from './PrecisionSlider';
 import {
-  Plane,
+  AirplaneTilt,
   Wind,
-  Layers,
+  StackSimple,
   Play,
   Pause,
-  RotateCcw,
+  ArrowCounterClockwise,
   Flame,
-  Compass,
+  CompassRose,
   Repeat,
-  Box,
+  Cube,
   Check,
   Waves,
   Gauge,
   ArrowUpRight,
-  Zap,
-  Sparkles,
-  Grid3x3,
-} from 'lucide-react';
+  Lightning,
+  Sparkle,
+  GridFour,
+} from '@phosphor-icons/react';
 
 interface ControlsDeckProps {
   params: SimulationParams;
@@ -46,7 +46,10 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
 
   const atmo = getAtmosphere(params.altitude_ft);
   const machEstimate = (params.airspeed_kts * 0.514444) / atmo.speedOfSound_ms;
-  const isStalledEstimate = params.angle_of_attack >= currentModel.stallAngle;
+  const { posStallAngle, negStallAngle } = getEffectiveStallAngles(params.modelType, params.flaps_deg);
+  const isStalledEstimate =
+    currentModel.stallAngle > 0 &&
+    (params.angle_of_attack >= posStallAngle || params.angle_of_attack <= -negStallAngle);
 
   // Dynamic Auto AoA Flight Sweep
   useEffect(() => {
@@ -162,9 +165,9 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
       {/* 1. Aircraft Model Selection & Airframe Configuration */}
       <div className="antigravity-glass p-3 sm:p-4 rounded-xl flex flex-col gap-3">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-6 h-6 rounded-lg bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA] shrink-0">
-              <Plane className="w-3.5 h-3.5" />
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-7 h-7 rounded-[9px] bg-gradient-to-br from-[#1769AA]/16 via-[#1769AA]/10 to-[#0EA5E9]/18 ring-1 ring-[#1769AA]/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] flex items-center justify-center text-[#1769AA] shrink-0">
+              <AirplaneTilt weight="duotone" className="w-4 h-4" />
             </div>
             <span className="text-xs font-bold uppercase tracking-wider text-[#161A1D] font-sans truncate">
               Airframe &amp; CAD
@@ -203,8 +206,8 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
                     {config.hasGlbModel ? ' · GLB' : ''}
                   </span>
                   {isSelected && (
-                    <span className="w-4 h-4 rounded-full bg-[#1769AA] text-white flex items-center justify-center">
-                      <Check className="w-2.5 h-2.5" />
+                    <span className="w-4 h-4 rounded-full bg-gradient-to-br from-[#1769AA] to-[#0284C7] text-white flex items-center justify-center shadow-xs">
+                      <Check weight="bold" className="w-2.5 h-2.5" />
                     </span>
                   )}
                 </div>
@@ -226,9 +229,9 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
         {/* 3D GLB Asset Configuration */}
         {currentModel.hasGlbModel && (
           <div className="p-3 rounded-xl bg-[var(--bg)] border border-[var(--border)] flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="w-7 h-7 rounded-lg bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA] shrink-0">
-                <Box className="w-3.5 h-3.5" />
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-[10px] bg-gradient-to-br from-[#1769AA]/16 via-[#1769AA]/10 to-[#0EA5E9]/18 ring-1 ring-[#1769AA]/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] flex items-center justify-center text-[#1769AA] shrink-0">
+                <Cube weight="duotone" className="w-4 h-4" />
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
@@ -250,7 +253,7 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
                 onClick={onOpenModelInspector}
                 className="px-2.5 py-1.5 rounded-lg bg-[#1769AA] hover:bg-[#145a92] text-white font-semibold text-[11px] transition-colors flex items-center gap-1.5 shadow-sm shrink-0 cursor-pointer"
               >
-                <Box className="w-3.5 h-3.5" />
+                <Cube weight="duotone" className="w-3.5 h-3.5" />
                 <span>Inspect CAD</span>
               </button>
             )}
@@ -267,9 +270,9 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
         {/* Attitude & Control Surfaces */}
         <div className="antigravity-glass p-3 sm:p-4 rounded-xl flex flex-col gap-3">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="w-6 h-6 rounded-lg bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA] shrink-0">
-                <Compass className="w-3.5 h-3.5" />
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-7 h-7 rounded-[9px] bg-gradient-to-br from-[#1769AA]/16 via-[#1769AA]/10 to-[#0EA5E9]/18 ring-1 ring-[#1769AA]/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] flex items-center justify-center text-[#1769AA] shrink-0">
+                <CompassRose weight="duotone" className="w-4 h-4" />
               </div>
               <span className="text-xs font-bold uppercase tracking-wider text-[#161A1D] font-sans truncate">
                 Attitude &amp; Flaps
@@ -285,7 +288,7 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
               }`}
               title="Continuously sweep Angle of Attack dynamically"
             >
-              <Repeat className={`w-3 h-3 ${isAutoSweeping ? 'animate-spin' : ''}`} />
+              <Repeat weight="bold" className={`w-3.5 h-3.5 ${isAutoSweeping ? 'animate-spin' : ''}`} />
               <span>{isAutoSweeping ? 'Sweeping' : 'Auto Sweep'}</span>
             </button>
           </div>
@@ -383,9 +386,9 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
         {/* Atmospheric Flight Envelope */}
         <div className="antigravity-glass p-3 sm:p-4 rounded-xl flex flex-col gap-3">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="w-6 h-6 rounded-lg bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA] shrink-0">
-                <Wind className="w-3.5 h-3.5" />
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-7 h-7 rounded-[9px] bg-gradient-to-br from-[#1769AA]/16 via-[#1769AA]/10 to-[#0EA5E9]/18 ring-1 ring-[#1769AA]/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] flex items-center justify-center text-[#1769AA] shrink-0">
+                <Wind weight="duotone" className="w-4 h-4" />
               </div>
               <span className="text-xs font-bold uppercase tracking-wider text-[#161A1D] font-sans truncate">
                 Atmospheric Envelope
@@ -477,9 +480,9 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
       {/* 3. Visualization Toggles & Fluid Tuning */}
       <div className="antigravity-glass p-3 sm:p-4 rounded-xl flex flex-col gap-3">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-6 h-6 rounded-lg bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA] shrink-0">
-              <Layers className="w-3.5 h-3.5" />
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-7 h-7 rounded-[9px] bg-gradient-to-br from-[#1769AA]/16 via-[#1769AA]/10 to-[#0EA5E9]/18 ring-1 ring-[#1769AA]/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] flex items-center justify-center text-[#1769AA] shrink-0">
+              <StackSimple weight="duotone" className="w-4 h-4" />
             </div>
             <span className="text-xs font-bold uppercase tracking-wider text-[#161A1D] font-sans truncate">
               Flow Overlays
@@ -495,7 +498,7 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
                   : 'bg-[var(--bg)] text-[#161A1D] border-[var(--border)] hover:border-[#1769AA]'
               }`}
             >
-              {isPaused ? <Play className="w-3 h-3 fill-current" /> : <Pause className="w-3 h-3" />}
+              {isPaused ? <Play weight="fill" className="w-3 h-3" /> : <Pause weight="fill" className="w-3 h-3" />}
               <span>{isPaused ? 'Resume' : 'Pause'}</span>
             </button>
             <button
@@ -503,7 +506,7 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
               className="p-1.5 rounded-lg bg-[var(--bg)] text-[#5C6670] hover:text-[#161A1D] border border-[var(--border)] hover:border-[#1769AA] transition-colors cursor-pointer"
               title="Reset Simulation"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
+              <ArrowCounterClockwise weight="bold" className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
@@ -514,9 +517,9 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
             { key: 'show_streamlines', label: 'Smoke Lines', desc: 'Vortex ribbons', icon: Waves },
             { key: 'show_heatmap', label: 'CFD Heatmap', desc: 'Cp pressure', icon: Gauge },
             { key: 'show_pressure_vectors', label: 'Force Vectors', desc: 'Lift & Drag 3D', icon: ArrowUpRight },
-            { key: 'show_particles', label: 'PIV Particles', desc: 'RK2 streaks', icon: Sparkles },
-            { key: 'show_quiver', label: 'Vector Quiver', desc: 'Velocity grid', icon: Grid3x3 },
-            { key: 'show_shockwaves', label: 'Mach Cone', desc: 'Shockwave', icon: Zap },
+            { key: 'show_particles', label: 'PIV Particles', desc: 'RK2 streaks', icon: Sparkle },
+            { key: 'show_quiver', label: 'Vector Quiver', desc: 'Velocity grid', icon: GridFour },
+            { key: 'show_shockwaves', label: 'Mach Cone', desc: 'Shockwave', icon: Lightning },
           ].map((item) => {
             const active = params[item.key as keyof SimulationParams] as boolean;
             const Icon = item.icon;
@@ -534,13 +537,13 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
               >
                 <div className="flex items-center justify-between w-full">
                   <div
-                    className={`w-5 h-5 rounded-md flex items-center justify-center ${
+                    className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${
                       active
-                        ? 'bg-[#1769AA] text-white'
-                        : 'bg-[var(--bg)] text-[#5C6670] border border-[var(--border)]'
+                        ? 'bg-gradient-to-br from-[#1769AA] to-[#0284C7] text-white shadow-xs'
+                        : 'bg-[var(--bg)] text-[#5C6670] ring-1 ring-[#D9DEE2]'
                     }`}
                   >
-                    <Icon className="w-3 h-3" />
+                    <Icon weight={active ? 'duotone' : 'regular'} className="w-3.5 h-3.5" />
                   </div>
                   <div
                     className={`w-6 h-3.5 rounded-full p-0.5 transition-colors flex items-center ${
@@ -590,9 +593,9 @@ export const ControlsDeck: React.FC<ControlsDeckProps> = ({
 
       {/* 4. One-Click Flight Scenarios */}
       <div className="antigravity-glass p-3 sm:p-4 rounded-xl flex flex-col gap-3">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-lg bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA]">
-            <Flame className="w-3.5 h-3.5" />
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-[9px] bg-gradient-to-br from-amber-500/18 via-orange-500/10 to-amber-500/15 ring-1 ring-amber-500/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] flex items-center justify-center text-amber-600 shrink-0">
+            <Flame weight="duotone" className="w-4 h-4" />
           </div>
           <span className="text-xs font-bold uppercase tracking-wider text-[#161A1D] font-sans">
             Quick Flight Regimes

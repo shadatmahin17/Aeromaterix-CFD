@@ -32,11 +32,12 @@ const _surfSample: SurfaceSample = { dist: 0, nx: 0, ny: 1, nz: 0, inside: false
 const _spanInfo: SpanSectionInfo = { leX: 0, teX: 0, quarterChordX: 0, chord: 1, yMid: 0, thickness: 0.3 };
 const _bsOut = { u: 0, v: 0, w: 0 };
 
+const CYLINDER_RADIUS = 1.4;
+const CYLINDER_HALF_HEIGHT = 3.8;
+
 /**
  * Evaluates the analytical Biot-Savart induced velocity of a finite straight vortex filament A -> B
  * with Vatistas/Lamb-Oseen viscous core regularization (coreRadius).
- *
- *   V_ind = (Gamma / (4 * pi)) * ((r1 x r2) / (|r1 x r2|^2 + rc^2 * |dl|^2)) * (dl . r1/|r1| - dl . r2/|r2|)
  */
 function addBiotSavartSegment(
   px: number,
@@ -70,7 +71,6 @@ function addBiotSavartSegment(
   const dlSq = dlx * dlx + dly * dly + dlz * dlz;
   if (dlSq < 1e-6) return 0;
 
-  // Cross product r1 x r2
   const cx = r1y * r2z - r1z * r2y;
   const cy = r1z * r2x - r1x * r2z;
   const cz = r1x * r2y - r1y * r2x;
@@ -95,15 +95,115 @@ function addBiotSavartSegment(
 }
 
 /**
- * 3D Aerodynamic Fluid Dynamics Engine (Vortex Flow Law + Real Vertex Boundary Law)
+ * 3D Aerodynamic Fluid Dynamics Engine (Vortex Flow Law + Signed Surface Boundary Law)
  *
  * Combines:
  *  1. Biot-Savart 3D Horseshoe Vortex Lattice (Kutta-Joukowski bound circulation,
  *     trailing vortex sheet, Lamb-Oseen diffused wingtip vortices, and delta leading-edge vortices).
- *  2. C1-Smooth Real Mesh Vertex Surface Field (no-penetration tangential slip along grad d).
+ *  2. True 3D Signed Distance Field (SDF) Surface Boundary Law (strict no-penetration
+ *     tangential slip along outward grad(sdf) with exterior constraint projection).
  *  3. Viscous boundary layer separation, stall wake shedding, and Mach oblique shock deflection.
  */
 export class FluidDynamics3D {
+  /**
+   * Returns true if world-space point `p` lies inside or closer than `clearance`
+   * to the solid model geometry.
+   */
+  public static isInsideSolid(
+    p: Vertex3D,
+    params: Fluid3DParams,
+    clearance = 0.04
+  ): boolean {
+    const aoaRad = (params.aoaDeg * Math.PI) / 180;
+    const sinA = Math.sin(aoaRad);
+    const cosA = Math.cos(aoaRad);
+    const bx = p.x * cosA - p.y * sinA;
+    const by = p.x * sinA + p.y * cosA;
+    const bz = p.z;
+
+    if (params.modelType === 'cylinder') {
+      if (Math.abs(by) <= CYLINDER_HALF_HEIGHT + clearance) {
+        return Math.hypot(bx, bz) < CYLINDER_RADIUS + clearance;
+      }
+      return false;
+    }
+
+    if (params.surfaceField && params.surfaceField.sample(bx, by, bz, _surfSample)) {
+      return _surfSample.dist < clearance;
+    }
+    return false;
+  }
+
+  /**
+   * Projects world-space point `p` strictly outside the solid model surface
+   * by at least `minClearance`, preventing discrete RK2 steps from entering
+   * the cylinder, airfoil, fuselage, or engine nacelles.
+   */
+  public static constrainToExterior(
+    p: Vertex3D,
+    params: Fluid3DParams,
+    minClearance = 0.08
+  ): Vertex3D {
+    const aoaRad = (params.aoaDeg * Math.PI) / 180;
+    const sinA = Math.sin(aoaRad);
+    const cosA = Math.cos(aoaRad);
+
+    let bx = p.x * cosA - p.y * sinA;
+    let by = p.x * sinA + p.y * cosA;
+    let bz = p.z;
+
+    if (params.modelType === 'cylinder') {
+      const targetR = CYLINDER_RADIUS + minClearance;
+      const capY = CYLINDER_HALF_HEIGHT + minClearance;
+      if (Math.abs(by) < capY) {
+        const rXZ = Math.hypot(bx, bz);
+        if (rXZ < targetR) {
+          // If near top/bottom cap edge and closer to end cap than side wall, push over cap
+          const distToSide = targetR - rXZ;
+          const distToCap = capY - Math.abs(by);
+          if (distToCap < distToSide && distToCap < 0.25) {
+            by = by >= 0 ? capY : -capY;
+          } else if (rXZ > 1e-4) {
+            const scale = targetR / rXZ;
+            bx *= scale;
+            bz *= scale;
+          } else {
+            bz = targetR;
+          }
+          return {
+            x: bx * cosA + by * sinA,
+            y: -bx * sinA + by * cosA,
+            z: bz,
+          };
+        }
+      }
+      return p;
+    }
+
+    const sf = params.surfaceField;
+    if (!sf) return p;
+
+    let modified = false;
+    for (let iter = 0; iter < 4; iter++) {
+      if (!sf.sample(bx, by, bz, _surfSample)) break;
+      if (_surfSample.dist >= minClearance) break;
+
+      const push = minClearance - _surfSample.dist + 0.02;
+      bx += _surfSample.nx * push;
+      by += _surfSample.ny * push;
+      bz += _surfSample.nz * push;
+      modified = true;
+    }
+
+    if (!modified) return p;
+
+    return {
+      x: bx * cosA + by * sinA,
+      y: -bx * sinA + by * cosA,
+      z: bz,
+    };
+  }
+
   public static getVelocity(
     p: Vertex3D,
     params: Fluid3DParams
@@ -141,44 +241,53 @@ export class FluidDynamics3D {
     let isSeparated = false;
 
     // -------------------------------------------------------------------------
-    // 1. BLUFF BODY CYLINDER (Doublet + von Kármán Vortex Street)
+    // 1. BLUFF BODY VERTICAL CYLINDER (Doublet in X-Z + von Kármán Vortex Street)
+    //    Geometry is vertical along Y (|by| <= 3.8) with circular cross-section
+    //    in X-Z (r = hypot(bx, bz) = 1.4).
     // -------------------------------------------------------------------------
     if (modelType === 'cylinder') {
-      const R = 1.8;
-      const rSq = p.x * p.x + p.y * p.y;
-      const r = Math.sqrt(rSq);
+      const R = CYLINDER_RADIUS;
+      const Reff = R * 1.07; // slight viscous displacement thickness
+      const halfH = CYLINDER_HALF_HEIGHT;
+      const rXZSq = bx * bx + bz * bz;
+      const rXZ = Math.sqrt(rXZSq);
 
-      if (r > 0.05) {
-        const factor = (R * R) / Math.max(R * R * 0.92, rSq);
-        const cos2th = (p.x * p.x - p.y * p.y) / rSq;
-        const sin2th = (2 * p.x * p.y) / rSq;
+      // Height attenuation: full 2D bluff-body deflection along cylinder, smooth fade past top/bottom ends
+      const endMargin = Math.max(0, Math.abs(by) - halfH);
+      const heightBlend = endMargin <= 0 ? 1.0 : Math.max(0, 1.0 - endMargin / 0.85);
 
-        u = vInf * (1 - factor * cos2th);
-        v = -vInf * factor * sin2th;
+      if (heightBlend > 0.001) {
+        // Freestream vector in body frame
+        const freestreamUb = vInf * cosA;
+        const freestreamVb = vInf * sinA;
 
-        // Smooth tangential boundary slip around cylinder
-        if (r < R * 1.15) {
-          const nx = p.x / r;
-          const ny = p.y / r;
-          const vn = u * nx + v * ny;
-          if (vn < 0) {
-            u -= vn * nx;
-            v -= vn * ny;
-          }
-          if (r < R * 1.04) {
-            const push = ((R * 1.04 - r) / (R * 0.14)) * 1.1 * vInf;
-            u += nx * push;
-            v += ny * push;
+        let ub = freestreamUb;
+        let vb = freestreamVb;
+        let wb = 0;
+
+        if (rXZ > 0.02) {
+          const factor = (Reff * Reff) / Math.max(Reff * Reff * 0.92, rXZSq);
+          const cos2th = (bx * bx - bz * bz) / rXZSq;
+          const sin2th = (2 * bx * bz) / rXZSq;
+
+          ub = freestreamUb * (1 - factor * cos2th);
+          wb = -freestreamUb * factor * sin2th;
+
+          // End-cap tip spillover over top/bottom of finite cylinder
+          if (Math.abs(by) > halfH - 0.65 && rXZ < R * 1.45) {
+            const capSign = by >= 0 ? 1 : -1;
+            const capFactor = Math.max(0, 1 - Math.abs(Math.abs(by) - halfH) / 0.75);
+            vb += capSign * 0.48 * vInf * capFactor * Math.max(0, 1 - rXZ / (R * 1.5));
           }
         }
 
-        // Biot-Savart alternating von Kármán vortex street shedding downstream
-        if (p.x > R * 0.65) {
+        // Biot-Savart alternating von Kármán vortex street shedding downstream in X-Z
+        if (bx > R * 0.5 && Math.abs(by) <= halfH + 0.55) {
           const strouhal = 0.21 * (vInf / (2 * R));
           const wakeSpeed = vInf * 0.78;
           const spacing = wakeSpeed / Math.max(0.25, strouhal);
-          const gammaKarman = vInf * R * (1.8 + viscosity * 1.2);
-          const coreR = 0.45 + viscosity * 0.8 + Math.max(0, p.x - R) * 0.03;
+          const gammaKarman = vInf * R * (1.65 + viscosity * 1.1);
+          const coreR = 0.42 + viscosity * 0.75 + Math.max(0, bx - R) * 0.03;
 
           _bsOut.u = 0;
           _bsOut.v = 0;
@@ -187,29 +296,72 @@ export class FluidDynamics3D {
           const phaseShift = (timeSec * wakeSpeed) % spacing;
           for (let k = 0; k < 5; k++) {
             const sign = k % 2 === 0 ? 1 : -1;
-            const vxPos = R * 1.1 + k * (spacing * 0.5) + phaseShift;
-            const vyPos = sign * 0.65;
+            const vxPos = R * 1.15 + k * (spacing * 0.5) + phaseShift;
+            const vzPos = sign * 0.72;
             vorticity += addBiotSavartSegment(
-              p.x, p.y, p.z,
-              vxPos, vyPos, -5.0,
-              vxPos, vyPos, 5.0,
+              bx, by, bz,
+              vxPos, -halfH, vzPos,
+              vxPos, halfH, vzPos,
               sign * gammaKarman * 0.65,
               coreR,
               _bsOut
             );
           }
 
-          u += _bsOut.u;
-          v += _bsOut.v;
-          if (Math.abs(p.y) < 2.2) {
-            u -= 0.22 * vInf * Math.exp(-Math.abs(p.y) / 1.1);
+          ub += _bsOut.u;
+          vb += _bsOut.v;
+          wb += _bsOut.w;
+
+          if (Math.abs(bz) < R * 1.35) {
+            ub -= 0.24 * vInf * Math.exp(-Math.abs(bz) / (R * 0.85));
             isSeparated = true;
           }
         }
+
+        // Strict no-penetration boundary around vertical cylinder wall (X-Z) & end caps (Y)
+        if (Math.abs(by) <= halfH + 0.28 && rXZ < R + 0.45) {
+          if (Math.abs(by) > halfH - 0.12 && rXZ < R * 0.92) {
+            // Top / bottom cap deflection
+            const capNy = by >= 0 ? 1 : -1;
+            const vDotCap = vb * capNy;
+            if (vDotCap < 0) vb -= vDotCap * capNy;
+            if (Math.abs(by) < halfH + 0.14) {
+              vb += capNy * 0.85 * vInf;
+            }
+          } else {
+            const nx = rXZ > 1e-4 ? bx / rXZ : 0;
+            const nz = rXZ > 1e-4 ? bz / rXZ : 1;
+            const vDotN = ub * nx + wb * nz;
+            if (vDotN < 0) {
+              ub -= vDotN * nx;
+              wb -= vDotN * nz;
+            }
+            // Outward boundary cushion & front-stagnation split
+            const clearance = R + 0.22 - rXZ;
+            if (clearance > 0) {
+              const push = Math.min(2.0 * vInf, (clearance / 0.22) * 1.35 * vInf);
+              ub += nx * push;
+              wb += nz * push;
+            }
+            // Break exact dead-center stagnation at front (nx ~ -1, bz ~ 0)
+            if (nx < -0.75 && Math.hypot(ub, wb) < 0.22 * vInf) {
+              wb += (bz >= 0 ? 1 : -1) * 0.35 * vInf;
+            }
+          }
+        }
+
+        // Convert body-frame velocity back to world frame & blend with freestream beyond ends
+        const wu = ub * cosA + vb * sinA;
+        const wv = -ub * sinA + vb * cosA;
+        const ww = wb;
+
+        u = vInf * (1 - heightBlend) + wu * heightBlend;
+        v = wv * heightBlend;
+        w = ww * heightBlend;
       }
     } else {
       // -----------------------------------------------------------------------
-      // 2. WINGED AIRCRAFT: BIOT-SAVART HORSESHOE VORTEX LATTICE + VERTEX LAW
+      // 2. WINGED AIRCRAFT: BIOT-SAVART HORSESHOE VORTEX LATTICE + SDF BOUNDARY
       // -----------------------------------------------------------------------
       let halfSpan = 6.8;
       let rootChord = 7.5;
@@ -291,13 +443,11 @@ export class FluidDynamics3D {
           y2 = 0;
         }
 
-        // Convert bound vortex endpoints to world space (rotation.z = -aoaRad)
         const wAx = qcX1 * cosA + y1 * sinA;
         const wAy = -qcX1 * sinA + y1 * cosA;
         const wBx = qcX2 * cosA + y2 * sinA;
         const wBy = -qcX2 * sinA + y2 * cosA;
 
-        // 1) Bound vortex (-Z -> +Z): negative gamma gives +u above wing (suction), -u below, -v downwash aft
         vorticity += addBiotSavartSegment(
           p.x, p.y, p.z,
           wAx, wAy, z1,
@@ -307,7 +457,6 @@ export class FluidDynamics3D {
           _bsOut
         );
 
-        // 2) Trailing horseshoe legs rolling into tip downwash
         const dGammaFactor = 0.35 + 0.65 * zNorm;
         const wTe1x = teX1 * cosA + y1 * sinA;
         const wTe1y = -teX1 * sinA + y1 * cosA;
@@ -317,7 +466,6 @@ export class FluidDynamics3D {
         const dxDown = Math.max(0, p.x - 0.5 * (wTe1x + wTe2x));
         const wakeCore = baseCore * 0.8 + Math.sqrt(Math.max(0, 0.14 * viscosity * dxDown));
 
-        // Left (-Z) trailing leg: +gamma gives downwash inboard
         vorticity += addBiotSavartSegment(
           p.x, p.y, p.z,
           wAx, wAy, z1,
@@ -327,7 +475,6 @@ export class FluidDynamics3D {
           _bsOut
         );
 
-        // Right (+Z) trailing leg: -gamma gives downwash inboard
         vorticity += addBiotSavartSegment(
           p.x, p.y, p.z,
           wBx, wBy, z2,
@@ -352,7 +499,6 @@ export class FluidDynamics3D {
         for (const sign of [-1, 1]) {
           const tipZ = sign * halfSpan * 0.97;
           const endZ = sign * halfSpan * 0.92;
-          // -sign * tipGamma ensures inboard downwash & upward/inward wingtip roll-up
           vorticity += addBiotSavartSegment(
             p.x, p.y, p.z,
             wTipX, wTipY, tipZ,
@@ -403,55 +549,12 @@ export class FluidDynamics3D {
         w += _bsOut.w;
       }
 
-      // --- D. SMOOTH C1 VERTEX SURFACE BOUNDARY LAW (Tangential Slip & No-Penetration) ---
-      if (surfaceField && surfaceField.sample(bx, by, bz, _surfSample)) {
-        const dist = _surfSample.dist;
-        const bHalo = 0.85 + viscosity * 0.45;
-
-        if (dist < bHalo) {
-          // Rotate smooth outward normal (grad d) from body frame to world frame (rotation.z = -aoaRad)
-          const wnx = _surfSample.nx * cosA + _surfSample.ny * sinA;
-          const wny = -_surfSample.nx * sinA + _surfSample.ny * cosA;
-          const wnz = _surfSample.nz;
-
-          // Smoothstep proximity blend in [0, 1] -> zero discontinuities across field boundaries
-          const t = Math.max(0, Math.min(1, 1 - dist / bHalo));
-          const wBlend = t * t * (3 - 2 * t);
-
-          const vDotN = u * wnx + v * wny + w * wnz;
-          if (vDotN < 0) {
-            u -= vDotN * wnx * wBlend;
-            v -= vDotN * wny * wBlend;
-            w -= vDotN * wnz * wBlend;
-          }
-
-          // Gentle, bounded thin-skin outward deflection so tubes glide cleanly around fuselage & wings
-          if (dist < 0.26) {
-            const skinT = (0.26 - dist) / 0.26;
-            const cushion = skinT * skinT * 0.95 * vInf;
-            u += wnx * cushion;
-            v += wny * cushion;
-            w += wnz * cushion;
-          }
-
-          // Smooth nose stagnation deceleration without flow reversal
-          if (wnx < -0.4) {
-            const stag = Math.min(0.45, (-wnx - 0.4) * wBlend * 0.75);
-            u *= 1 - stag;
-          }
-        }
-      } else {
-        const absZ = Math.abs(bz);
-        if (absZ < halfSpan && bx > defaultLeX && bx < defaultTeX) {
-          const distY = Math.abs(by);
-          if (distY < 0.42) {
-            const push = ((0.42 - distY) / 0.42) * 0.85 * vInf;
-            v += (by >= 0 ? push : -push) * cosA;
-          }
-        }
+      // Prevent Biot-Savart upstream reversal BEFORE solid boundary projection
+      if (!isStalled && u < vInf * 0.25) {
+        u = vInf * 0.25;
       }
 
-      // --- E. BOUNDARY LAYER SEPARATION & STALL VORTEX SHEDDING ---
+      // --- D. BOUNDARY LAYER SEPARATION & STALL VORTEX SHEDDING ---
       if (isStalled && Math.abs(bz) <= halfSpan * 1.05) {
         const localChordStart = surfaceField && surfaceField.getSpanSection(bz, _spanInfo)
           ? _spanInfo.leX
@@ -488,7 +591,7 @@ export class FluidDynamics3D {
         }
       }
 
-      // --- F. SUPERSONIC OBLIQUE SHOCKWAVE DEFLECTION (Mach >= 1.0) ---
+      // --- E. SUPERSONIC OBLIQUE SHOCKWAVE DEFLECTION (Mach >= 1.0) ---
       if (mach >= 1.0) {
         const noseX = surfaceField ? surfaceField.minX : -6.5;
         const wNoseX = noseX * cosA;
@@ -508,7 +611,7 @@ export class FluidDynamics3D {
         }
       }
 
-      // --- G. ENGINE EXHAUST JET MOMENTUM (F-22 & Boeing 787) ---
+      // --- F. ENGINE EXHAUST JET MOMENTUM (F-22 & Boeing 787) ---
       if (modelType === 'f22' && bx > 5.0) {
         const jetPower = airspeed_kts >= 450 ? (airspeed_kts / 380) * 1.15 : 0.42;
         for (const nz of [-0.67, 0.67]) {
@@ -527,11 +630,60 @@ export class FluidDynamics3D {
           }
         }
       }
-    }
 
-    // Prevent upstream flow reversal artifacts while keeping separated stall wakes realistic
-    if (!isSeparated && u < vInf * 0.25) {
-      u = vInf * 0.25;
+      // --- G. TRUE SIGNED-DISTANCE SURFACE BOUNDARY LAW (Applied LAST so nothing penetrates) ---
+      if (surfaceField && surfaceField.sample(bx, by, bz, _surfSample)) {
+        const dist = _surfSample.dist; // < 0 inside solid body, > 0 outside
+        const bHalo = 0.78 + viscosity * 0.35;
+
+        if (dist < bHalo) {
+          // Rotate strictly outward normal (grad sdf) from body frame to world frame
+          const wnx = _surfSample.nx * cosA + _surfSample.ny * sinA;
+          const wny = -_surfSample.nx * sinA + _surfSample.ny * cosA;
+          const wnz = _surfSample.nz;
+
+          // 100% hard tangential slip at/inside surface (dist <= 0.14), smoothstep outside
+          let wBlend = 1.0;
+          if (dist > 0.14) {
+            const t = Math.max(0, Math.min(1, (bHalo - dist) / (bHalo - 0.14)));
+            wBlend = t * t * (3 - 2 * t);
+          }
+
+          const vDotN = u * wnx + v * wny + w * wnz;
+          if (vDotN < 0) {
+            u -= vDotN * wnx * wBlend;
+            v -= vDotN * wny * wBlend;
+            w -= vDotN * wnz * wBlend;
+          }
+
+          // Outward skin cushion / expulsion if close to or inside the solid mesh
+          if (dist < 0.22) {
+            const pen = 0.22 - dist;
+            const cushion = Math.min(2.4 * vInf, (pen / 0.22) * 1.45 * vInf);
+            u += wnx * cushion;
+            v += wny * cushion;
+            w += wnz * cushion;
+          }
+
+          // Cleanly split stagnation flow over/under leading edge or nose without getting stuck
+          if (wnx < -0.5) {
+            const tangSpeed = Math.hypot(u, v, w);
+            if (tangSpeed < 0.28 * vInf) {
+              const splitDirY = _surfSample.ny >= -0.05 ? 1 : -1;
+              v += splitDirY * 0.32 * vInf;
+            }
+          }
+        }
+      } else {
+        const absZ = Math.abs(bz);
+        if (absZ < halfSpan && bx > defaultLeX && bx < defaultTeX) {
+          const distY = Math.abs(by);
+          if (distY < 0.42) {
+            const push = ((0.42 - distY) / 0.42) * 0.85 * vInf;
+            v += (by >= 0 ? push : -push) * cosA;
+          }
+        }
+      }
     }
 
     // -------------------------------------------------------------------------
@@ -545,16 +697,17 @@ export class FluidDynamics3D {
   }
 
   /**
-   * Numerically integrates a 3D vortex streamline using 2nd-order Runge-Kutta (RK2 / Midpoint Method).
+   * Numerically integrates a 3D vortex streamline using 2nd-order Runge-Kutta (RK2 / Midpoint Method)
+   * with exterior surface projection so streamlines wrap smoothly around every body without penetrating.
    */
   public static traceStreamline(
     start: Vertex3D,
     params: Fluid3DParams,
-    steps = 136,
-    ds = 0.28
+    steps = 165,
+    ds = 0.22
   ): (Vertex3D & { speed: number; pressureCoeff: number; vorticity: number; isSeparated: boolean })[] {
     const points: (Vertex3D & { speed: number; pressureCoeff: number; vorticity: number; isSeparated: boolean })[] = [];
-    let cur: Vertex3D = { ...start };
+    let cur: Vertex3D = FluidDynamics3D.constrainToExterior({ ...start }, params, 0.09);
 
     for (let i = 0; i < steps; i++) {
       const v1 = FluidDynamics3D.getVelocity(cur, params);
@@ -571,20 +724,22 @@ export class FluidDynamics3D {
       if (cur.x > 22 || Math.abs(cur.y) > 9 || Math.abs(cur.z) > 14) break;
 
       const len1 = v1.speed || 1;
-      const mid: Vertex3D = {
+      const midRaw: Vertex3D = {
         x: cur.x + (v1.u / len1) * (ds * 0.5),
         y: cur.y + (v1.v / len1) * (ds * 0.5),
         z: cur.z + (v1.w / len1) * (ds * 0.5),
       };
+      const mid = FluidDynamics3D.constrainToExterior(midRaw, params, 0.09);
 
       const v2 = FluidDynamics3D.getVelocity(mid, params);
       const len2 = v2.speed || 1;
 
-      cur = {
+      const nextRaw: Vertex3D = {
         x: cur.x + (v2.u / len2) * ds,
         y: cur.y + (v2.v / len2) * ds,
         z: cur.z + (v2.w / len2) * ds,
       };
+      cur = FluidDynamics3D.constrainToExterior(nextRaw, params, 0.09);
     }
 
     return points;

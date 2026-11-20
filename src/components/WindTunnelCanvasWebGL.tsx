@@ -19,13 +19,13 @@ import { AircraftSurfaceField } from '../engine/AircraftSurfaceField';
 import { windTunnelAudio } from '../utils/audio';
 import { createSafeWebGLRenderer } from '../utils/webglSupport';
 import {
-  AlertTriangle,
-  Volume2,
-  VolumeX,
-  Box,
+  Warning,
+  SpeakerHigh,
+  SpeakerSlash,
+  Cube,
   Camera,
-  RotateCw,
-} from 'lucide-react';
+  ArrowsClockwise,
+} from '@phosphor-icons/react';
 
 interface WindTunnelCanvasWebGLProps {
   params: SimulationParams;
@@ -404,30 +404,59 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
             const pz = pos[i * 3 + 2];
 
             const v1 = FluidDynamics3D.getVelocity({ x: px, y: py, z: pz }, fluid3DParams);
+            let nx = px;
+            let ny = py;
+            let nz = pz;
 
             if (!currentPaused) {
-              // RK2 midpoint evaluation
-              const mx = px + v1.u * stepScale * 0.5;
-              const my = py + v1.v * stepScale * 0.5;
-              const mz = pz + v1.w * stepScale * 0.5;
-              const v2 = FluidDynamics3D.getVelocity({ x: mx, y: my, z: mz }, fluid3DParams);
+              // RK2 midpoint evaluation constrained outside solid mesh
+              const mid = FluidDynamics3D.constrainToExterior(
+                {
+                  x: px + v1.u * stepScale * 0.5,
+                  y: py + v1.v * stepScale * 0.5,
+                  z: pz + v1.w * stepScale * 0.5,
+                },
+                fluid3DParams,
+                0.09
+              );
+              const v2 = FluidDynamics3D.getVelocity(mid, fluid3DParams);
 
-              const nx = px + v2.u * stepScale;
-              const ny = py + v2.v * stepScale;
-              const nz = pz + v2.w * stepScale;
+              const advected = FluidDynamics3D.constrainToExterior(
+                {
+                  x: px + v2.u * stepScale,
+                  y: py + v2.v * stepScale,
+                  z: pz + v2.w * stepScale,
+                },
+                fluid3DParams,
+                0.09
+              );
+
+              nx = advected.x;
+              ny = advected.y;
+              nz = advected.z;
 
               pos[i * 3] = nx;
               pos[i * 3 + 1] = ny;
               pos[i * 3 + 2] = nz;
 
               const speed = v2.speed || 1;
-              const streakLen = Math.min(1.35, 0.28 + speed * 0.38);
+              const streakLen = Math.min(1.25, 0.24 + speed * 0.34);
               const invS = streakLen / speed;
 
+              const tail = FluidDynamics3D.constrainToExterior(
+                {
+                  x: nx - v2.u * invS,
+                  y: ny - v2.v * invS,
+                  z: nz - v2.w * invS,
+                },
+                fluid3DParams,
+                0.07
+              );
+
               // Tail -> Head aligned with real velocity vector
-              streakArr[i * 6] = nx - v2.u * invS;
-              streakArr[i * 6 + 1] = ny - v2.v * invS;
-              streakArr[i * 6 + 2] = nz - v2.w * invS;
+              streakArr[i * 6] = tail.x;
+              streakArr[i * 6 + 1] = tail.y;
+              streakArr[i * 6 + 2] = tail.z;
               streakArr[i * 6 + 3] = nx;
               streakArr[i * 6 + 4] = ny;
               streakArr[i * 6 + 5] = nz;
@@ -662,6 +691,56 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
     };
   }, [params.modelType, webglUnavailable]);
 
+  // Evict any particles trapped inside newly loaded or re-pitched solid geometry
+  useEffect(() => {
+    const pPositions = particlePositionsRef.current;
+    const pStreaks = particleStreaksRef.current;
+    if (!pPositions || !pStreaks) return;
+
+    const fluid3DParams: Fluid3DParams = {
+      modelType: params.modelType,
+      aoaDeg: params.angle_of_attack,
+      airspeed_kts: params.airspeed_kts,
+      mach: telemetry.mach,
+      altitude_ft: params.altitude_ft,
+      flapsDeg: params.flaps_deg,
+      viscosity: params.viscosity,
+      isStalled: telemetry.isStalled,
+      cl: telemetry.cl,
+      cd: telemetry.cd,
+      surfaceField: surfaceFieldRef.current,
+    };
+
+    const posAttr = pStreaks.geometry.attributes.position as THREE.BufferAttribute;
+    const streakArr = posAttr.array as Float32Array;
+    const count = pPositions.length / 3;
+    let changed = false;
+
+    for (let i = 0; i < count; i++) {
+      const pt = {
+        x: pPositions[i * 3],
+        y: pPositions[i * 3 + 1],
+        z: pPositions[i * 3 + 2],
+      };
+      if (FluidDynamics3D.isInsideSolid(pt, fluid3DParams, 0.08)) {
+        const out = FluidDynamics3D.constrainToExterior(pt, fluid3DParams, 0.12);
+        pPositions[i * 3] = out.x;
+        pPositions[i * 3 + 1] = out.y;
+        pPositions[i * 3 + 2] = out.z;
+        streakArr[i * 6] = out.x - 0.25;
+        streakArr[i * 6 + 1] = out.y;
+        streakArr[i * 6 + 2] = out.z;
+        streakArr[i * 6 + 3] = out.x;
+        streakArr[i * 6 + 4] = out.y;
+        streakArr[i * 6 + 5] = out.z;
+        changed = true;
+      }
+    }
+    if (changed) {
+      posAttr.needsUpdate = true;
+    }
+  }, [surfaceVersion, params.modelType, params.angle_of_attack]);
+
   // Update Dynamic Aircraft Pitch (AoA)
   useEffect(() => {
     if (!aircraftGroupRef.current) return;
@@ -766,8 +845,10 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
     const filaments: RakeFilament[] = [];
 
     if (params.modelType === 'cylinder') {
-      [-2.2, -1.5, -0.9, -0.35, 0.0, 0.35, 0.9, 1.5, 2.2].forEach((y) => {
-        [-2.5, 0.0, 2.5].forEach((z) => filaments.push({ y, z, type: 'wing' }));
+      [-2.4, -1.2, 0.0, 1.2, 2.4].forEach((y) => {
+        [-2.2, -1.25, -0.55, 0.0, 0.55, 1.25, 2.2].forEach((z) =>
+          filaments.push({ y, z, type: 'wing' })
+        );
       });
     } else if (params.modelType === 'naca2412' || params.modelType === 'naca0012') {
       [-0.9, -0.35, 0.05, 0.45, 1.0].forEach((y) => {
@@ -821,7 +902,7 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
     const collectedCurves: TracedCurveData[] = [];
 
     filaments.forEach((fil) => {
-      const pts3D = FluidDynamics3D.traceStreamline({ x: -20, y: fil.y, z: fil.z }, fluid3DParams, 136, 0.28);
+      const pts3D = FluidDynamics3D.traceStreamline({ x: -20, y: fil.y, z: fil.z }, fluid3DParams, 175, 0.21);
       if (pts3D.length < 6) return;
 
       collectedCurves.push({ points: pts3D });
@@ -1015,7 +1096,7 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
       {/* WebGL2 Unavailable Fallback Overlay */}
       {webglUnavailable && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0D1114]/95 gap-4 z-30 p-6 text-center">
-          <AlertTriangle className="w-10 h-10 text-amber-400" />
+          <Warning weight="duotone" className="w-10 h-10 text-amber-400" />
           <div className="max-w-md flex flex-col gap-1.5">
             <h3 className="text-sm font-bold text-white">Hardware WebGL2 Unavailable</h3>
             <p className="text-xs text-slate-400 leading-relaxed">
@@ -1074,7 +1155,7 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
             <>
               <span className="text-slate-500" aria-hidden="true">·</span>
               <span className="text-[10px] sm:text-[11px] font-bold text-red-400 flex items-center gap-1 whitespace-nowrap shrink-0">
-                <AlertTriangle className="w-3 h-3" />
+                <Warning weight="duotone" className="w-3.5 h-3.5" />
                 STALL
               </span>
             </>
@@ -1089,7 +1170,7 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
               className="p-1.5 sm:px-3 sm:py-1.5 rounded-lg bg-[#151A1E]/95 hover:bg-slate-800 border border-slate-700/80 text-slate-100 text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
               title="Open 3D CAD Asset Inspector"
             >
-              <Box className="w-3.5 h-3.5 text-sky-400" />
+              <Cube weight="duotone" className="w-4 h-4 text-sky-400" />
               <span className="hidden sm:inline">3D Inspector</span>
             </button>
           )}
@@ -1099,7 +1180,7 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
             className="p-2 rounded-lg bg-[#151A1E]/95 hover:bg-slate-800 border border-slate-700/80 text-slate-200 hover:text-white transition-colors"
             title="Save CFD PNG Snapshot"
           >
-            <Camera className="w-3.5 h-3.5 text-sky-400" />
+            <Camera weight="duotone" className="w-4 h-4 text-sky-400" />
           </button>
 
           <div className="flex items-center bg-[#151A1E]/95 p-0.5 rounded-lg border border-slate-700/80">
@@ -1109,9 +1190,9 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
               title={params.audio_enabled ? 'Mute Wind Sound' : 'Enable Wind Audio'}
             >
               {params.audio_enabled ? (
-                <Volume2 className="w-3.5 h-3.5 text-sky-400" />
+                <SpeakerHigh weight="duotone" className="w-4 h-4 text-sky-400" />
               ) : (
-                <VolumeX className="w-3.5 h-3.5" />
+                <SpeakerSlash weight="duotone" className="w-4 h-4" />
               )}
             </button>
 
@@ -1157,7 +1238,7 @@ export const WindTunnelCanvasWebGL: React.FC<WindTunnelCanvasWebGLProps> = ({
             }`}
             title="Toggle 360 Turntable Orbit"
           >
-            <RotateCw className={`w-3 h-3 ${isAutoOrbit ? 'animate-spin' : ''}`} />
+            <ArrowsClockwise weight="bold" className={`w-3.5 h-3.5 ${isAutoOrbit ? 'animate-spin' : ''}`} />
             <span className="hidden sm:inline">Orbit</span>
           </button>
         </div>

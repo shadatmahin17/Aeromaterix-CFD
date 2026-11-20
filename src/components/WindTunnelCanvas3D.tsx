@@ -5,19 +5,18 @@ import { getAircraft3DModel, computeFaceNormal, Vertex3D } from '../utils/aircra
 import { AircraftSurfaceField } from '../engine/AircraftSurfaceField';
 import { FluidDynamics3D, Fluid3DParams } from '../engine/FluidDynamics3D';
 import { windTunnelAudio } from '../utils/audio';
-import { 
-  RotateCw, 
-  AlertTriangle, 
-  Zap, 
-  Volume2, 
-  VolumeX, 
+import {
+  ArrowsClockwise,
+  Warning,
+  Lightning,
+  SpeakerHigh,
+  SpeakerSlash,
   ArrowUpRight,
   Flame,
-  Activity,
-  Compass,
-  Play,
-  Box
-} from 'lucide-react';
+  Pulse,
+  CompassRose,
+  Cube,
+} from '@phosphor-icons/react';
 
 interface WindTunnelCanvas3DProps {
   params: SimulationParams;
@@ -331,20 +330,33 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
         const v1 = FluidDynamics3D.getVelocity(p, fluid3DParams);
 
         if (!isPaused) {
-          // RK2 midpoint advection
-          const mid = {
-            x: p.x + v1.u * dtStep * 0.5,
-            y: p.y + v1.v * dtStep * 0.5,
-            z: p.z + v1.w * dtStep * 0.5,
-          };
+          // RK2 midpoint advection constrained outside solid mesh
+          const mid = FluidDynamics3D.constrainToExterior(
+            {
+              x: p.x + v1.u * dtStep * 0.5,
+              y: p.y + v1.v * dtStep * 0.5,
+              z: p.z + v1.w * dtStep * 0.5,
+            },
+            fluid3DParams,
+            0.09
+          );
           const v2 = FluidDynamics3D.getVelocity(mid, fluid3DParams);
           p.vx = v2.u;
           p.vy = v2.v;
           p.vz = v2.w;
 
-          p.x += p.vx * dtStep;
-          p.y += p.vy * dtStep;
-          p.z += p.vz * dtStep;
+          const nextPos = FluidDynamics3D.constrainToExterior(
+            {
+              x: p.x + p.vx * dtStep,
+              y: p.y + p.vy * dtStep,
+              z: p.z + p.vz * dtStep,
+            },
+            fluid3DParams,
+            0.09
+          );
+          p.x = nextPos.x;
+          p.y = nextPos.y;
+          p.z = nextPos.z;
           p.age += 1;
 
           if (p.x > 20 || Math.abs(p.y) > 8 || Math.abs(p.z) > 13 || p.age > p.maxAge) {
@@ -363,6 +375,11 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
             }
             p.age = 0;
           }
+        } else if (FluidDynamics3D.isInsideSolid(p, fluid3DParams, 0.08)) {
+          const out = FluidDynamics3D.constrainToExterior(p, fluid3DParams, 0.12);
+          p.x = out.x;
+          p.y = out.y;
+          p.z = out.z;
         }
 
         const head = project3Dto2D(p, camX, camY, camZ, viewMatrix, focalLength, cx, cy);
@@ -644,12 +661,16 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
     if (params.show_streamlines) {
       const halfSpan = surfaceField?.halfSpan ?? 5.5;
 
-      const rakeZ = [
-        -halfSpan * 0.96, -halfSpan * 0.65, -halfSpan * 0.35,
-        -0.8, 0.0, 0.8,
-        halfSpan * 0.35, halfSpan * 0.65, halfSpan * 0.96,
-      ];
-      const rakeY = [-0.65, -0.1, 0.45, 1.1];
+      const rakeZ = params.modelType === 'cylinder'
+        ? [-2.2, -1.25, -0.55, 0.0, 0.55, 1.25, 2.2]
+        : [
+            -halfSpan * 0.96, -halfSpan * 0.65, -halfSpan * 0.35,
+            -0.8, 0.0, 0.8,
+            halfSpan * 0.35, halfSpan * 0.65, halfSpan * 0.96,
+          ];
+      const rakeY = params.modelType === 'cylinder'
+        ? [-2.0, 0.0, 2.0]
+        : [-0.65, -0.1, 0.45, 1.1];
 
       ctx.save();
       ctx.lineWidth = Math.max(1.2, 1.6 * params.smoke_density);
@@ -659,7 +680,7 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
         for (let ryIdx = 0; ryIdx < rakeY.length; ryIdx++) {
           const y = rakeY[ryIdx];
           const startPt = { x: -20, y, z };
-          const pts = FluidDynamics3D.traceStreamline(startPt, fluid3DParams, 130, 0.29);
+          const pts = FluidDynamics3D.traceStreamline(startPt, fluid3DParams, 170, 0.22);
 
           if (pts.length > 2) {
             ctx.beginPath();
@@ -987,7 +1008,7 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
 
         {telemetry.isStalled && (
           <div className="px-3 py-1.5 rounded-lg bg-red-950/95 border border-red-500/70 flex items-center gap-1.5">
-            <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+            <Warning weight="duotone" className="w-4 h-4 text-red-400" />
             <span className="text-xs font-bold text-red-100 uppercase tracking-wider font-mono">
               STALL DETECTED
             </span>
@@ -996,7 +1017,7 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
 
         {telemetry.mach >= 1.0 && (
           <div className="px-3 py-1.5 rounded-lg bg-[#151A1E]/95 border border-amber-500/60 flex items-center gap-1.5">
-            <Zap className="w-3.5 h-3.5 text-amber-400" />
+            <Lightning weight="duotone" className="w-4 h-4 text-amber-400" />
             <span className="text-xs font-bold text-amber-200 font-mono tabular-nums">
               MACH {telemetry.mach.toFixed(2)} SHOCK CONE
             </span>
@@ -1005,7 +1026,7 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
 
         {params.airspeed_kts >= 480 && (
           <div className="px-3 py-1.5 rounded-lg bg-[#151A1E]/95 border border-orange-500/60 flex items-center gap-1.5">
-            <Flame className="w-3.5 h-3.5 text-orange-400" />
+            <Flame weight="duotone" className="w-4 h-4 text-orange-400" />
             <span className="text-xs font-bold text-orange-200 font-mono">
               AFTERBURNER ACTIVE
             </span>
@@ -1021,7 +1042,7 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
             className="px-3 py-1.5 rounded-lg bg-[#1769AA] hover:bg-[#1e7bc4] text-white text-xs font-semibold transition-colors flex items-center gap-1.5"
             title="Switch to Hardware WebGL 3D Engine"
           >
-            <Box className="w-3.5 h-3.5" />
+            <Cube weight="duotone" className="w-4 h-4" />
             <span className="hidden sm:inline">WebGL 3D</span>
           </button>
         )}
@@ -1032,7 +1053,7 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
             className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg bg-[#151A1E]/95 hover:bg-slate-800 border border-slate-700/80 text-slate-200 hover:text-white text-xs font-semibold transition-colors flex items-center gap-1.5"
             title="Inspect 3D CAD Asset"
           >
-            <Box className="w-3.5 h-3.5 text-sky-400" />
+            <Cube weight="duotone" className="w-4 h-4 text-sky-400" />
             <span className="hidden md:inline">Inspect CAD</span>
           </button>
         )}
@@ -1082,7 +1103,7 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
           }`}
           title={isAutoOrbit ? 'Stop 360° Orbit' : 'Start 360° Orbit'}
         >
-          <Compass className="w-4 h-4" />
+          <CompassRose weight="duotone" className="w-4 h-4" />
         </button>
 
         {/* Force Vectors Toggle */}
@@ -1095,7 +1116,7 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
           }`}
           title={params.show_pressure_vectors ? 'Hide 3D Force Vectors' : 'Show 3D Force Vectors'}
         >
-          <ArrowUpRight className="w-4 h-4" />
+          <ArrowUpRight weight="bold" className="w-4 h-4" />
         </button>
 
         {/* Audio Toggle */}
@@ -1108,7 +1129,7 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
           }`}
           title={params.audio_enabled ? 'Mute Wind Tunnel Audio' : 'Enable Wind Tunnel Audio'}
         >
-          {params.audio_enabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+          {params.audio_enabled ? <SpeakerHigh weight="duotone" className="w-4 h-4" /> : <SpeakerSlash weight="duotone" className="w-4 h-4" />}
         </button>
 
         {/* Reset Camera */}
@@ -1117,7 +1138,7 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
           className="p-2 rounded-lg bg-[#151A1E]/95 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 transition-colors"
           title="Reset Camera"
         >
-          <RotateCw className="w-4 h-4" />
+          <ArrowsClockwise weight="bold" className="w-4 h-4" />
         </button>
       </div>
 
@@ -1147,7 +1168,7 @@ export const WindTunnelCanvas3D: React.FC<WindTunnelCanvas3DProps> = ({
         </div>
 
         <div className="hidden sm:flex items-center gap-2 bg-[#151A1E]/95 px-3 py-1.5 rounded-lg border border-slate-700/80 font-mono tabular-nums shrink-0">
-          <Activity className="w-3.5 h-3.5 text-emerald-400" />
+          <Pulse weight="duotone" className="w-4 h-4 text-emerald-400" />
           <span className="text-emerald-300 font-semibold">L/D: {telemetry.ldRatio.toFixed(1)}:1</span>
           <span className="text-slate-500" aria-hidden="true">·</span>
           <span className="text-sky-300">q: {(telemetry.dynamic_pressure_pa / 1000).toFixed(1)} kPa</span>

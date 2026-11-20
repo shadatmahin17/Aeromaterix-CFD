@@ -10,25 +10,18 @@ import { AeroTheoryModal } from './components/AeroTheoryModal';
 import { ModelViewerModal } from './components/ModelViewerModal';
 import { probeWebGL2Support } from './utils/webglSupport';
 import { syncRuntimeSeoMetadata } from './utils/seo';
-import { 
-  BookOpen, 
-  RotateCcw, 
-  Wind, 
-  Box, 
-  Keyboard, 
-  Sliders, 
-  Activity, 
-  PanelLeftClose, 
-  PanelLeft, 
-  PanelRightClose, 
-  PanelRight, 
-  Volume2, 
-  VolumeX, 
-  ShieldAlert,
-  Flame,
-  CheckCircle2,
-  Gauge
-} from 'lucide-react';
+import {
+  BookOpenText,
+  ArrowCounterClockwise,
+  Wind,
+  Cube,
+  Keyboard,
+  SlidersHorizontal,
+  Pulse,
+  SidebarSimple,
+  SpeakerHigh,
+  SpeakerSlash,
+} from '@phosphor-icons/react';
 
 const INITIAL_PARAMS: SimulationParams = {
   modelType: 'f22',
@@ -187,7 +180,7 @@ export default function App() {
             }`}
             aria-label="Controls"
           >
-            <Sliders className="w-3.5 h-3.5 shrink-0" />
+            <SlidersHorizontal weight="duotone" className="w-3.5 h-3.5 shrink-0" />
             <span className="hidden min-[400px]:inline">Setup</span>
           </button>
           <button
@@ -199,7 +192,7 @@ export default function App() {
             }`}
             aria-label="3D View"
           >
-            <Wind className="w-3.5 h-3.5 shrink-0" />
+            <Wind weight="duotone" className="w-3.5 h-3.5 shrink-0" />
             <span>3D</span>
           </button>
           <button
@@ -211,7 +204,7 @@ export default function App() {
             }`}
             aria-label="Results"
           >
-            <Activity className="w-3.5 h-3.5 shrink-0" />
+            <Pulse weight="duotone" className="w-3.5 h-3.5 shrink-0" />
             <span className="hidden min-[400px]:inline">Data</span>
           </button>
         </div>
@@ -228,7 +221,7 @@ export default function App() {
             }`}
             title={showLeftSidebar ? 'Collapse Left Controls Deck' : 'Expand Left Controls Deck'}
           >
-            {showLeftSidebar ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
+            <SidebarSimple weight={showLeftSidebar ? 'duotone' : 'regular'} className="w-4 h-4" />
             <span className="hidden xl:inline text-[11px]">Controls</span>
           </button>
 
@@ -243,7 +236,7 @@ export default function App() {
             title={showRightSidebar ? 'Collapse Right Telemetry Deck' : 'Expand Right Telemetry Deck'}
           >
             <span className="hidden xl:inline text-[11px]">Results</span>
-            {showRightSidebar ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}
+            <SidebarSimple weight={showRightSidebar ? 'duotone' : 'regular'} className="w-4 h-4 scale-x-[-1]" />
           </button>
 
           <div className="hidden lg:block w-px h-5 bg-[var(--border)] mx-0.5" />
@@ -254,7 +247,7 @@ export default function App() {
             className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg bg-[var(--surface)] border border-[var(--border)] hover:border-[#1769AA] text-xs font-semibold text-[#161A1D] hover:text-[#1769AA] transition-colors flex items-center gap-1.5 shadow-sm"
             title="Inspect 3D GLB CAD Model with Full Turntable & Specifications"
           >
-            <Box className="w-3.5 h-3.5 text-[#1769AA]" />
+            <Cube weight="duotone" className="w-4 h-4 text-[#1769AA]" />
             <span className="hidden sm:inline">CAD Inspector</span>
           </button>
 
@@ -263,7 +256,7 @@ export default function App() {
             onClick={() => setIsTheoryOpen(true)}
             className="hidden sm:flex px-2.5 py-1.5 rounded-lg bg-[var(--surface)] border border-[var(--border)] hover:border-[#1769AA] text-xs font-semibold text-[#161A1D] hover:text-[#1769AA] transition-colors items-center gap-1.5 whitespace-nowrap shadow-sm"
           >
-            <BookOpen className="w-3.5 h-3.5 text-[#1769AA]" />
+            <BookOpenText weight="duotone" className="w-4 h-4 text-[#1769AA]" />
             <span className="hidden md:inline">Theory</span>
           </button>
 
@@ -277,7 +270,7 @@ export default function App() {
             }`}
             title={params.audio_enabled ? 'Mute Audio (M)' : 'Enable Audio (M)'}
           >
-            {params.audio_enabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            {params.audio_enabled ? <SpeakerHigh weight="duotone" className="w-4 h-4" /> : <SpeakerSlash weight="duotone" className="w-4 h-4" />}
           </button>
 
           {/* Reset Simulation Button */}
@@ -286,7 +279,7 @@ export default function App() {
             className="p-1.5 rounded-lg text-[#5C6670] hover:text-[#161A1D] bg-[var(--surface)] hover:bg-[var(--bg)] transition-colors border border-[var(--border)]"
             title="Reset Simulation to Initial State (R)"
           >
-            <RotateCcw className="w-4 h-4" />
+            <ArrowCounterClockwise weight="bold" className="w-4 h-4" />
           </button>
         </div>
       </header>
@@ -307,7 +300,7 @@ export default function App() {
         >
           <div className="flex items-center justify-between border-b border-[var(--border)] pb-2">
             <div className="flex items-center gap-2">
-              <Sliders className="w-4 h-4 text-[#1769AA]" />
+              <SlidersHorizontal weight="duotone" className="w-4 h-4 text-[#1769AA]" />
               <h2 className="text-xs font-bold uppercase tracking-wider text-[#161A1D] font-sans">
                 Simulation Controls
               </h2>
@@ -415,7 +408,7 @@ export default function App() {
         >
           <div className="flex items-center justify-between border-b border-[var(--border)] pb-2">
             <div className="flex items-center gap-2">
-              <Activity className="w-4 h-4 text-[#1769AA]" />
+              <Pulse weight="duotone" className="w-4 h-4 text-[#1769AA]" />
               <h2 className="text-xs font-bold uppercase tracking-wider text-[#161A1D] font-sans">
                 Telemetry &amp; Polars
               </h2>
@@ -446,8 +439,8 @@ export default function App() {
           {/* Real-Time Flow Dynamics Insight Card */}
           <div className="antigravity-glass p-3.5 rounded-xl text-xs text-[#5C6670] flex flex-col gap-2 leading-relaxed">
             <div className="flex items-center gap-2 text-[#161A1D] font-semibold">
-              <div className="w-5 h-5 rounded-md bg-[var(--accent-light)] border border-[#1769AA]/25 flex items-center justify-center text-[#1769AA]">
-                <Wind className="w-3 h-3" />
+              <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-[#1769AA]/16 to-[#0EA5E9]/14 ring-1 ring-[#1769AA]/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] flex items-center justify-center text-[#1769AA]">
+                <Wind weight="duotone" className="w-3.5 h-3.5" />
               </div>
               <span className="text-[#161A1D] font-bold text-xs">Vortex &amp; Vertex Flow Law</span>
             </div>
@@ -471,7 +464,7 @@ export default function App() {
       <footer className="min-h-7 py-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] border-t border-[var(--border)] bg-[var(--surface)] px-2.5 sm:px-4 flex items-center justify-between gap-2 text-[11px] text-[#5C6670] z-30 flex-shrink-0 overflow-hidden">
         <div className="hidden xl:flex items-center gap-2.5 whitespace-nowrap">
           <div className="flex items-center gap-1 text-[#161A1D] font-semibold">
-            <Keyboard className="w-3 h-3 text-[#1769AA]" />
+            <Keyboard weight="duotone" className="w-3.5 h-3.5 text-[#1769AA]" />
             <span>Hotkeys:</span>
           </div>
           <span className="font-mono text-[10px] bg-[var(--bg)] border border-[var(--border)] px-1.5 py-0.2 rounded text-[#161A1D]">Space</span> Pause
@@ -498,6 +491,8 @@ export default function App() {
           </button>
           <span className="hidden md:inline text-[var(--border)]" aria-hidden="true">·</span>
           <span className="hidden md:inline font-medium text-[#161A1D]">AeroLab Workstation</span>
+          <span className="text-[var(--border)]" aria-hidden="true">·</span>
+          <span className="font-medium text-[#161A1D]">powered by Shadat Mahin</span>
         </div>
       </footer>
 

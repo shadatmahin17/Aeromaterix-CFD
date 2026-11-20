@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, BookOpen, Compass, AlertTriangle, Wind, Zap } from 'lucide-react';
+import { X, BookOpenText, CompassRose, Warning, Wind, Lightning } from '@phosphor-icons/react';
 
 interface AeroTheoryModalProps {
   isOpen: boolean;
@@ -19,7 +19,7 @@ export const AeroTheoryModal: React.FC<AeroTheoryModalProps> = ({ isOpen, onClos
         {/* Header */}
         <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-[var(--border)] flex items-center justify-between gap-2 bg-[var(--surface)] sticky top-0">
           <div className="flex items-center gap-2 min-w-0">
-            <BookOpen className="w-5 h-5 text-[#1769AA] shrink-0" />
+            <BookOpenText weight="duotone" className="w-5 h-5 text-[#1769AA] shrink-0" />
             <h2 className="text-sm sm:text-base font-bold text-[#161A1D] tracking-wide font-sans truncate">
               Aerodynamics &amp; Vortex Flow Physics Guide
             </h2>
@@ -29,7 +29,7 @@ export const AeroTheoryModal: React.FC<AeroTheoryModalProps> = ({ isOpen, onClos
             className="p-2 sm:p-1.5 rounded-lg text-[#5C6670] hover:text-[#161A1D] hover:bg-[var(--bg)] transition-colors shrink-0"
             aria-label="Close guide"
           >
-            <X className="w-5 h-5" />
+            <X weight="bold" className="w-4 h-4" />
           </button>
         </div>
 
@@ -38,7 +38,7 @@ export const AeroTheoryModal: React.FC<AeroTheoryModalProps> = ({ isOpen, onClos
           {/* Section 1: Vortex & Vertex Flow Law */}
           <div className="p-4 rounded-xl bg-[var(--bg)] border border-[var(--border)]">
             <div className="flex items-center gap-2 text-[#1769AA] font-semibold mb-2">
-              <Compass className="w-4 h-4" />
+              <CompassRose weight="duotone" className="w-4 h-4" />
               <h3>1. Biot-Savart Vortex Lattice &amp; Surface Vertex Boundary</h3>
             </div>
             <p className="text-[#5C6670] mb-2.5">
@@ -60,7 +60,7 @@ export const AeroTheoryModal: React.FC<AeroTheoryModalProps> = ({ isOpen, onClos
           {/* Section 2: Aerodynamic Stall */}
           <div className="p-4 rounded-xl bg-[var(--bg)] border border-[var(--border)]">
             <div className="flex items-center gap-2 text-red-700 font-semibold mb-2">
-              <AlertTriangle className="w-4 h-4" />
+              <Warning weight="duotone" className="w-4 h-4" />
               <h3>2. Aerodynamic Stall &amp; Boundary Layer Separation</h3>
             </div>
             <p className="text-[#5C6670] mb-2">
@@ -82,7 +82,7 @@ export const AeroTheoryModal: React.FC<AeroTheoryModalProps> = ({ isOpen, onClos
           {/* Section 3: Supersonic Flow & Shockwaves */}
           <div className="p-4 rounded-xl bg-[var(--bg)] border border-[var(--border)]">
             <div className="flex items-center gap-2 text-amber-700 font-semibold mb-2">
-              <Zap className="w-4 h-4" />
+              <Lightning weight="duotone" className="w-4 h-4" />
               <h3>3. Transonic Flight, Mach Numbers &amp; Shockwaves</h3>
             </div>
             <p className="text-[#5C6670] mb-2">
@@ -104,7 +104,7 @@ export const AeroTheoryModal: React.FC<AeroTheoryModalProps> = ({ isOpen, onClos
           {/* Section 4: Key Formulas */}
           <div className="p-4 rounded-xl bg-[var(--bg)] border border-[var(--border)]">
             <div className="flex items-center gap-2 text-[#1769AA] font-semibold mb-2">
-              <Wind className="w-4 h-4" />
+              <Wind weight="duotone" className="w-4 h-4" />
               <h3>4. Governing Aerodynamic Equations</h3>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">

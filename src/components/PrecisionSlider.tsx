@@ -1,5 +1,5 @@
 import React from 'react';
-import { Minus, Plus } from 'lucide-react';
+import { Minus, Plus } from '@phosphor-icons/react';
 
 interface PrecisionSliderProps {
   id?: string;
@@ -86,7 +86,7 @@ export const PrecisionSlider: React.FC<PrecisionSliderProps> = ({
           aria-label={`Decrease ${label}`}
           title={`Decrease ${label}`}
         >
-          <Minus className="w-3 h-3" />
+          <Minus weight="bold" className="w-3 h-3" />
         </button>
 
         <div className="relative flex-1 flex items-center h-6">
@@ -119,7 +119,7 @@ export const PrecisionSlider: React.FC<PrecisionSliderProps> = ({
           aria-label={`Increase ${label}`}
           title={`Increase ${label}`}
         >
-          <Plus className="w-3 h-3" />
+          <Plus weight="bold" className="w-3 h-3" />
         </button>
       </div>
 
